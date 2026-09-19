@@ -25,9 +25,11 @@ const ACTION_COLOR_STYLES: Record<string, { bg: string; text: string; icon: stri
 class WebJourneyOverlay {
   private host: HTMLElement | null = null;
   private shadow: ShadowRoot | null = null;
+  private backdropEl: HTMLElement | null = null;
   private highlightBox: HTMLElement | null = null;
   private tooltipEl: HTMLElement | null = null;
   private activeTargetEl: Element | null = null;
+  private currentStep: StepDefinition | null = null;
   private isInspecting: boolean = false;
   private rafId: number | null = null;
   private player: JourneyPlayer;
@@ -66,24 +68,41 @@ class WebJourneyOverlay {
         all: initial;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       }
-      .wj-highlight-box {
+      .wj-backdrop {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 2147483640;
+        pointer-events: auto;
+        display: none;
+        transition: opacity 0.25s ease;
+      }
+      .wj-backdrop-svg {
         position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: auto;
+      }
+      .wj-highlight-box {
+        position: fixed;
         pointer-events: none;
         box-sizing: border-box;
         border: 2.5px solid #4f46e5;
-        background: rgba(79, 70, 229, 0.12);
+        background: rgba(79, 70, 229, 0.08);
         border-radius: 8px;
-        transition: top 0.1s cubic-bezier(0.16, 1, 0.3, 1), left 0.1s cubic-bezier(0.16, 1, 0.3, 1), width 0.1s ease-out, height 0.1s ease-out;
-        box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.25), 0 0 20px rgba(99, 102, 241, 0.35);
+        transition: top 0.08s cubic-bezier(0.16, 1, 0.3, 1), left 0.08s cubic-bezier(0.16, 1, 0.3, 1), width 0.08s ease-out, height 0.08s ease-out;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.35), 0 0 24px rgba(99, 102, 241, 0.5);
         animation: wjPulse 2.5s infinite;
-        z-index: 2147483646;
+        z-index: 2147483645;
       }
       @keyframes wjPulse {
         0%, 100% {
-          box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.25), 0 0 15px rgba(99, 102, 241, 0.3);
+          box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.35), 0 0 16px rgba(99, 102, 241, 0.4);
         }
         50% {
-          box-shadow: 0 0 0 6px rgba(99, 102, 241, 0.4), 0 0 25px rgba(99, 102, 241, 0.5);
+          box-shadow: 0 0 0 5px rgba(99, 102, 241, 0.5), 0 0 28px rgba(99, 102, 241, 0.65);
         }
       }
       .wj-inspector-badge {
@@ -104,14 +123,14 @@ class WebJourneyOverlay {
         gap: 4px;
       }
       .wj-tooltip-card {
-        position: absolute;
+        position: fixed;
         pointer-events: auto;
         background: #ffffff;
         color: #0f172a;
         padding: 0;
         border-radius: 14px;
-        box-shadow: 0 20px 40px -8px rgba(15, 23, 42, 0.25), 0 0 0 1px rgba(226, 232, 240, 0.9);
-        width: 330px;
+        box-shadow: 0 20px 40px -8px rgba(15, 23, 42, 0.35), 0 0 0 1px rgba(226, 232, 240, 0.9);
+        width: 340px;
         font-size: 13px;
         line-height: 1.5;
         z-index: 2147483647;
@@ -136,6 +155,29 @@ class WebJourneyOverlay {
         align-items: center;
         justify-content: space-between;
         margin-bottom: 10px;
+      }
+      .wj-close-btn {
+        background: none;
+        border: none;
+        font-size: 18px;
+        line-height: 1;
+        color: #94a3b8;
+        cursor: pointer;
+        padding: 2px 6px;
+        border-radius: 6px;
+        transition: all 0.15s ease;
+      }
+      .wj-close-btn:hover {
+        color: #0f172a;
+        background: #f1f5f9;
+      }
+      @keyframes wjShake {
+        0%, 100% { transform: translateX(0); }
+        20%, 60% { transform: translateX(-6px); }
+        40%, 80% { transform: translateX(6px); }
+      }
+      .wj-shake {
+        animation: wjShake 0.4s ease-in-out;
       }
       .wj-step-counter {
         font-size: 11px;
@@ -230,6 +272,30 @@ class WebJourneyOverlay {
     `;
     this.shadow.appendChild(style);
 
+    this.backdropEl = document.createElement("div");
+    this.backdropEl.className = "wj-backdrop";
+    this.backdropEl.innerHTML = `
+      <svg class="wj-backdrop-svg" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <mask id="wj-spotlight-mask">
+            <rect width="100%" height="100%" fill="white" />
+            <rect id="wj-mask-hole" x="0" y="0" width="0" height="0" rx="10" ry="10" fill="black" />
+          </mask>
+        </defs>
+        <rect width="100%" height="100%" fill="rgba(15, 23, 42, 0.72)" mask="url(#wj-spotlight-mask)" />
+      </svg>
+    `;
+    this.backdropEl.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (this.tooltipEl && this.tooltipEl.style.display !== "none") {
+        this.tooltipEl.classList.remove("wj-shake");
+        void this.tooltipEl.offsetWidth; // trigger reflow
+        this.tooltipEl.classList.add("wj-shake");
+      }
+    });
+    this.shadow.appendChild(this.backdropEl);
+
     this.highlightBox = document.createElement("div");
     this.highlightBox.className = "wj-highlight-box";
     this.highlightBox.style.display = "none";
@@ -247,8 +313,8 @@ class WebJourneyOverlay {
     const scheduleUpdate = () => {
       if (this.rafId) cancelAnimationFrame(this.rafId);
       this.rafId = requestAnimationFrame(() => {
-        if (this.activeTargetEl && this.highlightBox?.style.display !== "none") {
-          this.repositionHighlightAndTooltip(this.activeTargetEl);
+        if (this.activeTargetEl && (this.highlightBox?.style.display !== "none" || this.backdropEl?.style.display !== "none")) {
+          this.repositionHighlightAndTooltip(this.activeTargetEl, undefined, this.currentStep || undefined);
         }
       });
     };
@@ -262,11 +328,65 @@ class WebJourneyOverlay {
       if (e.key === "Escape") {
         if (this.isInspecting) {
           this.stopInspector();
-        } else if (this.player.getState() === "active") {
-          this.player.pause();
+        } else if (this.player.getState() !== "idle") {
+          this.player.stop();
+          this.clearHighlight();
         }
       }
     });
+  }
+
+  private showBackdrop() {
+    if (!this.backdropEl || !this.host) return;
+    this.host.style.position = "fixed";
+    this.host.style.inset = "0";
+    this.host.style.width = "100vw";
+    this.host.style.height = "100vh";
+    this.host.style.pointerEvents = "auto";
+    this.backdropEl.style.display = "block";
+  }
+
+  private hideBackdrop() {
+    if (this.backdropEl) {
+      this.backdropEl.style.display = "none";
+      const hole = this.backdropEl.querySelector("#wj-mask-hole");
+      if (hole) {
+        hole.setAttribute("width", "0");
+        hole.setAttribute("height", "0");
+      }
+    }
+    if (this.host) {
+      this.host.style.position = "absolute";
+      this.host.style.inset = "auto";
+      this.host.style.top = "0";
+      this.host.style.left = "0";
+      this.host.style.width = "0";
+      this.host.style.height = "0";
+      this.host.style.pointerEvents = "none";
+    }
+  }
+
+  private updateBackdropSpotlight(rect?: DOMRect) {
+    if (!this.backdropEl) return;
+    const hole = this.backdropEl.querySelector("#wj-mask-hole");
+    if (!hole) return;
+
+    if (!rect) {
+      hole.setAttribute("width", "0");
+      hole.setAttribute("height", "0");
+      return;
+    }
+
+    const pad = 6;
+    const x = Math.max(0, rect.left - pad);
+    const y = Math.max(0, rect.top - pad);
+    const width = rect.width + pad * 2;
+    const height = rect.height + pad * 2;
+
+    hole.setAttribute("x", `${x}`);
+    hole.setAttribute("y", `${y}`);
+    hole.setAttribute("width", `${width}`);
+    hole.setAttribute("height", `${height}`);
   }
 
   private checkResumableRun() {
@@ -299,12 +419,21 @@ class WebJourneyOverlay {
       this.renderCompletionCard(context.journey!);
     } else if (context.state === "blocked") {
       this.renderBlockedCard(context);
+    } else if (context.state === "idle") {
+      this.clearHighlight();
     }
   }
 
   private renderBlockedCard(context: PlayerContext) {
     if (!this.tooltipEl) return;
     const currentStep = context.journey?.steps[context.currentStepIndex];
+
+    this.showBackdrop();
+    this.updateBackdropSpotlight();
+
+    if (this.highlightBox) {
+      this.highlightBox.style.display = "none";
+    }
 
     this.tooltipEl.innerHTML = `
       <div class="wj-card-accent-bar" style="background: #ef4444;"></div>
@@ -313,7 +442,7 @@ class WebJourneyOverlay {
           <span class="wj-step-counter" style="color: #dc2626; background: #fee2e2; border-color: #fecaca;">
             Step ${context.currentStepIndex + 1} of ${context.journey?.steps.length}
           </span>
-          <span class="wj-badge" style="background: #fee2e2; color: #b91c1c;">Target Missing</span>
+          <button id="wj-blocked-close-btn" class="wj-close-btn" title="Exit Tour">&times;</button>
         </div>
         <h4 class="wj-title">${escapeHtml(currentStep?.title || "Target Not Found")}</h4>
         <div class="wj-error-box">
@@ -327,7 +456,7 @@ class WebJourneyOverlay {
           <div style="display: flex; gap: 6px;">
             ${
               currentStep?.allowSkip
-                ? '<button class="wj-button" id="wj-skip-btn">Skip Step &rarr;</button>'
+                ? '<button class="wj-button wj-button-secondary" id="wj-skip-btn">Skip</button>'
                 : ""
             }
             <button class="wj-button wj-button-secondary" id="wj-exit-btn">Exit</button>
@@ -336,9 +465,16 @@ class WebJourneyOverlay {
       </div>
     `;
 
+    this.tooltipEl.style.position = "fixed";
     this.tooltipEl.style.display = "block";
-    this.tooltipEl.style.top = "80px";
-    this.tooltipEl.style.left = "30px";
+    this.tooltipEl.style.top = "50%";
+    this.tooltipEl.style.left = "50%";
+    this.tooltipEl.style.transform = "translate(-50%, -50%)";
+
+    const exitHandler = () => {
+      this.player.stop();
+      this.clearHighlight();
+    };
 
     this.tooltipEl.querySelector("#wj-retry-btn")?.addEventListener("click", () => {
       this.player.resume();
@@ -346,21 +482,28 @@ class WebJourneyOverlay {
     this.tooltipEl.querySelector("#wj-skip-btn")?.addEventListener("click", () => {
       this.player.skipStep();
     });
-    this.tooltipEl.querySelector("#wj-exit-btn")?.addEventListener("click", () => {
-      this.player.stop();
-    });
+    this.tooltipEl.querySelector("#wj-exit-btn")?.addEventListener("click", exitHandler);
+    this.tooltipEl.querySelector("#wj-blocked-close-btn")?.addEventListener("click", exitHandler);
   }
 
   private renderCompletionCard(journey: Journey) {
     if (!this.tooltipEl) return;
+
+    this.showBackdrop();
+    this.updateBackdropSpotlight();
+
+    if (this.highlightBox) {
+      this.highlightBox.style.display = "none";
+    }
 
     this.tooltipEl.innerHTML = `
       <div class="wj-card-accent-bar" style="background: linear-gradient(90deg, #10b981 0%, #059669 100%);"></div>
       <div class="wj-card-inner">
         <div class="wj-tooltip-header">
           <span class="wj-badge" style="background: #dcfce7; color: #15803d;">Walkthrough Finished</span>
+          <button id="wj-finish-close-btn" class="wj-close-btn" title="Close">&times;</button>
         </div>
-        <h4 class="wj-title">🎉 You Did It!</h4>
+        <h4 class="wj-title" style="margin-top: 6px;">🎉 You Did It!</h4>
         <div class="wj-instruction">
           You have successfully completed <strong>${escapeHtml(journey.name)}</strong> (${journey.steps.length} steps).
         </div>
@@ -370,45 +513,102 @@ class WebJourneyOverlay {
       </div>
     `;
 
+    this.tooltipEl.style.position = "fixed";
     this.tooltipEl.style.display = "block";
-    this.tooltipEl.style.top = "80px";
-    this.tooltipEl.style.left = "30px";
+    this.tooltipEl.style.top = "50%";
+    this.tooltipEl.style.left = "50%";
+    this.tooltipEl.style.transform = "translate(-50%, -50%)";
 
-    this.tooltipEl.querySelector("#wj-finish-btn")?.addEventListener("click", () => {
+    const closeHandler = () => {
       this.player.stop();
       this.clearHighlight();
-    });
+    };
+
+    this.tooltipEl.querySelector("#wj-finish-btn")?.addEventListener("click", closeHandler);
+    this.tooltipEl.querySelector("#wj-finish-close-btn")?.addEventListener("click", closeHandler);
   }
 
-  private highlightStepTarget(el: Element, step: StepDefinition) {
+  public highlightStepTarget(el: Element, step: StepDefinition) {
     this.activeTargetEl = el;
+    this.currentStep = step;
+
+    // Isolate focus by showing dark backdrop
+    this.showBackdrop();
+
+    // Smooth scroll to component so it is centered in viewport
+    const rect = el.getBoundingClientRect();
+    const isComfortablyInView =
+      rect.top >= 80 &&
+      rect.bottom <= window.innerHeight - 80 &&
+      rect.left >= 40 &&
+      rect.right <= window.innerWidth - 40;
+
+    if (!isComfortablyInView) {
+      el.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+        inline: "nearest"
+      });
+    }
+
     this.repositionHighlightAndTooltip(el, undefined, step);
+
+    // Keep tooltip and spotlight synchronized as smooth scrolling progresses
+    const syncIntervals = [80, 180, 320, 500, 700];
+    syncIntervals.forEach((delay) => {
+      setTimeout(() => {
+        if (this.activeTargetEl === el && this.currentStep === step) {
+          this.repositionHighlightAndTooltip(el, undefined, step);
+        }
+      }, delay);
+    });
   }
 
   private repositionHighlightAndTooltip(el: Element, label?: string, step?: StepDefinition) {
     if (!this.highlightBox || !this.tooltipEl) return;
 
     const rect = el.getBoundingClientRect();
-    const scrollX = window.scrollX || window.pageXOffset;
-    const scrollY = window.scrollY || window.pageYOffset;
 
-    this.highlightBox.style.display = "block";
-    this.highlightBox.style.top = `${rect.top + scrollY - 3}px`;
-    this.highlightBox.style.left = `${rect.left + scrollX - 3}px`;
-    this.highlightBox.style.width = `${rect.width + 6}px`;
-    this.highlightBox.style.height = `${rect.height + 6}px`;
+    if (this.isInspecting) {
+      // Inspector mode uses document absolute coordinates
+      const scrollX = window.scrollX || window.pageXOffset;
+      const scrollY = window.scrollY || window.pageYOffset;
 
-    let badge = this.highlightBox.querySelector(".wj-inspector-badge");
-    if (label) {
-      if (!badge) {
-        badge = document.createElement("div");
-        badge.className = "wj-inspector-badge";
-        this.highlightBox.appendChild(badge);
+      this.highlightBox.style.position = "absolute";
+      this.highlightBox.style.display = "block";
+      this.highlightBox.style.top = `${rect.top + scrollY - 3}px`;
+      this.highlightBox.style.left = `${rect.left + scrollX - 3}px`;
+      this.highlightBox.style.width = `${rect.width + 6}px`;
+      this.highlightBox.style.height = `${rect.height + 6}px`;
+
+      let badge = this.highlightBox.querySelector(".wj-inspector-badge");
+      if (label) {
+        if (!badge) {
+          badge = document.createElement("div");
+          badge.className = "wj-inspector-badge";
+          this.highlightBox.appendChild(badge);
+        }
+        badge.textContent = `🎯 ${label}`;
+      } else if (badge) {
+        badge.remove();
       }
-      badge.textContent = `🎯 ${label}`;
-    } else if (badge) {
-      badge.remove();
+      return;
     }
+
+    // Player mode:
+    // 1. Update dark backdrop spotlight mask hole
+    this.updateBackdropSpotlight(rect);
+
+    // 2. Position pulsating highlight box (fixed on viewport)
+    this.highlightBox.style.position = "fixed";
+    this.highlightBox.style.display = "block";
+    this.highlightBox.style.top = `${rect.top - 4}px`;
+    this.highlightBox.style.left = `${rect.left - 4}px`;
+    this.highlightBox.style.width = `${rect.width + 8}px`;
+    this.highlightBox.style.height = `${rect.height + 8}px`;
+
+    const badge = this.highlightBox.querySelector(".wj-inspector-badge");
+    if (badge) badge.remove();
 
     if (step) {
       const currentIdx = this.player.getContext().currentStepIndex;
@@ -420,10 +620,13 @@ class WebJourneyOverlay {
         <div class="wj-card-accent-bar"></div>
         <div class="wj-card-inner">
           <div class="wj-tooltip-header">
-            <span class="wj-step-counter">Step ${currentIdx + 1} of ${totalSteps}</span>
-            <span class="wj-badge" style="background: ${actionStyle.bg}; color: ${actionStyle.text};">
-              ${actionStyle.icon} ${escapeHtml(step.action)}
-            </span>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="wj-step-counter">Step ${currentIdx + 1} of ${totalSteps}</span>
+              <span class="wj-badge" style="background: ${actionStyle.bg}; color: ${actionStyle.text};">
+                ${actionStyle.icon} ${escapeHtml(step.action)}
+              </span>
+            </div>
+            <button id="wj-exit-tour-btn" class="wj-close-btn" title="Exit Tour">&times;</button>
           </div>
           <div class="wj-progress-track">
             <div class="wj-progress-fill" style="width: ${pct}%;"></div>
@@ -431,7 +634,7 @@ class WebJourneyOverlay {
           <h4 class="wj-title">${escapeHtml(step.title)}</h4>
           <div class="wj-instruction">${escapeHtml(step.instruction)}</div>
           <div class="wj-footer">
-            <button class="wj-button wj-button-secondary" id="wj-back-btn" ${currentIdx === 0 ? "disabled style='opacity:0.3;'" : ""}>&larr; Back</button>
+            <button class="wj-button wj-button-secondary" id="wj-back-btn" ${currentIdx === 0 ? "disabled style='opacity:0.3; cursor:not-allowed;'" : ""}>&larr; Back</button>
             <div style="display: flex; gap: 6px;">
               ${
                 step.allowSkip
@@ -447,15 +650,39 @@ class WebJourneyOverlay {
       `;
       this.tooltipEl.style.display = "block";
 
-      let tooltipTop = rect.bottom + scrollY + 10;
-      const tooltipLeft = Math.max(16, Math.min(rect.left + scrollX, window.innerWidth - 350));
+      // Viewport Clamping: Card is ALWAYS 100% inside the viewport (portview)
+      const cardWidth = 340;
+      const cardHeight = this.tooltipEl.offsetHeight || 230;
+      const margin = 14;
 
-      if (rect.bottom + 200 > window.innerHeight && rect.top > 200) {
-        tooltipTop = rect.top + scrollY - 190;
+      let top = rect.bottom + margin;
+      let left = Math.max(margin, Math.min(rect.left, window.innerWidth - cardWidth - margin));
+
+      if (top + cardHeight > window.innerHeight - margin) {
+        const topAbove = rect.top - cardHeight - margin;
+        if (topAbove >= margin) {
+          top = topAbove;
+        } else {
+          if (rect.right + cardWidth + margin <= window.innerWidth) {
+            left = rect.right + margin;
+            top = Math.max(margin, Math.min(rect.top, window.innerHeight - cardHeight - margin));
+          } else if (rect.left - cardWidth - margin >= margin) {
+            left = rect.left - cardWidth - margin;
+            top = Math.max(margin, Math.min(rect.top, window.innerHeight - cardHeight - margin));
+          } else {
+            top = Math.max(margin, window.innerHeight - cardHeight - margin);
+          }
+        }
       }
 
-      this.tooltipEl.style.top = `${tooltipTop}px`;
-      this.tooltipEl.style.left = `${tooltipLeft}px`;
+      // Hard clamp inside viewport boundaries
+      top = Math.max(margin, Math.min(top, window.innerHeight - cardHeight - margin));
+      left = Math.max(margin, Math.min(left, window.innerWidth - cardWidth - margin));
+
+      this.tooltipEl.style.position = "fixed";
+      this.tooltipEl.style.top = `${top}px`;
+      this.tooltipEl.style.left = `${left}px`;
+      this.tooltipEl.style.transform = "none";
 
       this.tooltipEl.querySelector("#wj-back-btn")?.addEventListener("click", () => {
         this.player.previousStep();
@@ -466,13 +693,19 @@ class WebJourneyOverlay {
       this.tooltipEl.querySelector("#wj-step-continue-btn")?.addEventListener("click", () => {
         this.player.nextStep();
       });
+      this.tooltipEl.querySelector("#wj-exit-tour-btn")?.addEventListener("click", () => {
+        this.player.stop();
+        this.clearHighlight();
+      });
     }
   }
 
   public clearHighlight() {
     this.activeTargetEl = null;
+    this.currentStep = null;
     if (this.highlightBox) this.highlightBox.style.display = "none";
     if (this.tooltipEl) this.tooltipEl.style.display = "none";
+    this.hideBackdrop();
   }
 
   private initMessageListener() {
@@ -513,6 +746,7 @@ class WebJourneyOverlay {
           break;
 
         case "PLAYER_START":
+          this.showBackdrop();
           this.player.start(message.journey);
           sendResponse({ success: true });
           break;
@@ -523,12 +757,14 @@ class WebJourneyOverlay {
           break;
 
         case "PLAYER_RESUME":
+          this.showBackdrop();
           this.player.resume();
           sendResponse({ success: true });
           break;
 
         case "PLAYER_STOP":
           this.player.stop();
+          this.clearHighlight();
           sendResponse({ success: true });
           break;
       }
@@ -585,5 +821,18 @@ class WebJourneyOverlay {
   }
 }
 
-new WebJourneyOverlay();
+const overlay = new WebJourneyOverlay();
+(window as any).__webjourneyOverlay = overlay;
+
+window.addEventListener("message", (event) => {
+  if (event.data?.type === "WJ_TEST_HIGHLIGHT") {
+    const el = document.querySelector(event.data.selector);
+    if (el) {
+      overlay.highlightStepTarget(el, event.data.step);
+    }
+  } else if (event.data?.type === "WJ_TEST_STOP") {
+    overlay.clearHighlight();
+  }
+});
+
 console.log("[WebJourney] Modern Colorful Overlay & Player active.");
