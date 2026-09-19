@@ -1,6 +1,23 @@
 import { useEffect, useState } from "react";
 import { validateInvitation, type StoredInvite } from "@webjourney/journey-schema";
 
+function WebJourneyLogoIcon({ size = 26 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 320 330" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ display: "block" }}>
+      <defs>
+        <linearGradient id="sun-pop" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stopColor="#FFC23F"/><stop offset="1" stopColor="#FF8523"/></linearGradient>
+        <linearGradient id="trail-pop" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stopColor="#14B8A6"/><stop offset="1" stopColor="#087F72"/></linearGradient>
+      </defs>
+      <path d="M161 32 C110 28 70 68 69 117 C67 156 88 182 113 210 L158 254 Q162 258 167 253 L211 209 C238 179 258 151 256 117 C254 68 214 32 161 32 Z" fill="url(#sun-pop)"/>
+      <path d="M102 162 C98 176 89 185 60 194 C18 207 8 227 23 248 C30 258 48 266 76 275 L178 308 C195 314 220 316 236 314 C228 299 210 287 186 279 L88 249 C53 239 43 232 69 223 L117 208 C146 198 155 174 138 156 C127 145 109 147 102 162 Z" fill="url(#trail-pop)"/>
+      <path d="M97 125 L193 70 C200 66 208 72 205 80 L166 190 C163 198 155 199 149 191 L125 161 L101 186 C94 193 83 189 84 179 L88 145 L98 142 C87 140 87 130 97 125 Z" fill="#F7FCF5" stroke="#F7FCF5" strokeWidth="8" strokeLinejoin="round"/>
+      <path d="M104 132 L195 80 L158 181 L129 151 L95 177 L100 138 Z" fill="#087F72" stroke="#087F72" strokeWidth="2" strokeLinejoin="round"/>
+      <path d="M245 17 Q248 36 264 40 Q249 44 245 64 Q240 45 225 40 Q240 36 245 17 Z" fill="url(#sun-pop)"/>
+      <path d="M281 58 Q283 71 295 74 Q284 77 281 91 Q278 78 267 74 Q278 71 281 58 Z" fill="url(#trail-pop)"/>
+    </svg>
+  );
+}
+
 export function Popup() {
   const [currentUrl, setCurrentUrl] = useState<string>("");
   const [currentHost, setCurrentHost] = useState<string>("");
@@ -108,19 +125,20 @@ export function Popup() {
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <div
               style={{
-                width: "30px",
-                height: "30px",
-                background: "rgba(255, 255, 255, 0.2)",
+                width: "32px",
+                height: "32px",
+                background: "#ffffff",
                 borderRadius: "8px",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontWeight: 800,
-                fontSize: "14px",
-                border: "1px solid rgba(255, 255, 255, 0.3)"
+                boxShadow: "0 2px 6px rgba(0, 0, 0, 0.2)",
+                padding: "3px",
+                flexShrink: 0
               }}
+              title="WebJourney"
             >
-              WJ
+              <WebJourneyLogoIcon size={26} />
             </div>
             <div>
               <h2 style={{ margin: 0, fontSize: "16px", fontWeight: 800 }}>WebJourney</h2>
