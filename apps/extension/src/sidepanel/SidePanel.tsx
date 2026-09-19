@@ -139,7 +139,7 @@ const CODEVIOSO_SAMPLE_JOURNEY: Journey = {
 
 export function SidePanel() {
   const [activeTab, setActiveTab] = useState<{ id?: number; url?: string; title?: string }>({});
-  const [activeView, setActiveView] = useState<"builder" | "publish">("builder");
+  const [activeView, setActiveView] = useState<"builder" | "publish" | "widget">("builder");
   const [isInspecting, setIsInspecting] = useState(false);
   const [currentJourney, setCurrentJourney] = useState<Journey>(() =>
     createEmptyJourney("My Guided Journey", "http://localhost:5173")
@@ -154,6 +154,9 @@ export function SidePanel() {
   } | null>(null);
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: "success" | "info" | "error" } | null>(null);
   const [publishedInvite, setPublishedInvite] = useState<StoredInvite | null>(null);
+  const [launcherEnabled, setLauncherEnabled] = useState<boolean>(true);
+  const [launcherPosition, setLauncherPosition] = useState<"bottom-right" | "bottom-left">("bottom-right");
+  const [completedJourneys, setCompletedJourneys] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Load draft from chrome.storage.local on mount
@@ -185,7 +188,13 @@ export function SidePanel() {
     });
 
     if (chrome.storage?.local) {
-      chrome.storage.local.get([STORAGE_KEY, "webjourney_invitations"], (res) => {
+      chrome.storage.local.get([
+        STORAGE_KEY,
+        "webjourney_invitations",
+        "webjourney_launcher_enabled",
+        "webjourney_launcher_position",
+        "webjourney_completed_journeys"
+      ], (res) => {
         if (res[STORAGE_KEY]) {
           const validated = validateJourney(res[STORAGE_KEY]);
           if (validated.valid && validated.journey) {
@@ -197,6 +206,15 @@ export function SidePanel() {
           if (codes.length > 0) {
             setPublishedInvite(res.webjourney_invitations[codes[codes.length - 1]]);
           }
+        }
+        if (res.webjourney_launcher_enabled !== undefined) {
+          setLauncherEnabled(res.webjourney_launcher_enabled);
+        }
+        if (res.webjourney_launcher_position) {
+          setLauncherPosition(res.webjourney_launcher_position);
+        }
+        if (res.webjourney_completed_journeys) {
+          setCompletedJourneys(res.webjourney_completed_journeys);
         }
       });
     }
@@ -221,6 +239,44 @@ export function SidePanel() {
     chrome.runtime.onMessage.addListener(listener);
     return () => chrome.runtime.onMessage.removeListener(listener);
   }, []);
+
+  const toggleLauncherEnabled = (enabled: boolean) => {
+    setLauncherEnabled(enabled);
+    if (chrome.storage?.local) {
+      chrome.storage.local.set({ webjourney_launcher_enabled: enabled }, () => {
+        setStatusMessage({ text: `Launcher widget ${enabled ? "enabled" : "disabled"} on page!`, type: "success" });
+      });
+    }
+  };
+
+  const changeLauncherPosition = (pos: "bottom-right" | "bottom-left") => {
+    setLauncherPosition(pos);
+    if (chrome.storage?.local) {
+      chrome.storage.local.set({ webjourney_launcher_position: pos }, () => {
+        setStatusMessage({ text: `Widget position set to ${pos}!`, type: "success" });
+      });
+    }
+  };
+
+  const testOpenWidget = () => {
+    if (activeTab.id) {
+      chrome.tabs.sendMessage(activeTab.id, { type: "OPEN_LAUNCHER_CHECKLIST" }, () => {
+        setStatusMessage({ text: "Opened guides checklist on webpage!", type: "success" });
+      });
+    }
+  };
+
+  const resetProgress = () => {
+    if (chrome.storage?.local) {
+      chrome.storage.local.set({ webjourney_completed_journeys: [] }, () => {
+        setCompletedJourneys([]);
+        if (activeTab.id) {
+          chrome.tabs.sendMessage(activeTab.id, { type: "RESET_CHECKLIST_PROGRESS" });
+        }
+        setStatusMessage({ text: "Reset completed progress for all walkthroughs!", type: "info" });
+      });
+    }
+  };
 
   const saveJourney = (updated: Journey) => {
     setCurrentJourney(updated);
@@ -584,6 +640,29 @@ export function SidePanel() {
               <span style={{ background: "#10b981", color: "#ffffff", padding: "1px 5px", borderRadius: "10px", fontSize: "10px" }}>
                 ✓
               </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveView("widget")}
+            style={{
+              flex: 1,
+              padding: "6px 8px",
+              borderRadius: "6px",
+              border: "none",
+              background: activeView === "widget" ? "#ffffff" : "rgba(255,255,255,0.15)",
+              color: activeView === "widget" ? "#1e3a8a" : "#ffffff",
+              fontSize: "12px",
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "4px"
+            }}
+          >
+            <span>🌐 In-Page Widget</span>
+            {launcherEnabled && (
+              <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#10b981" }} />
             )}
           </button>
         </div>
@@ -1422,6 +1501,237 @@ export function SidePanel() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Widget View */}
+        {activeView === "widget" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            {/* Widget Overview Banner */}
+            <div
+              style={{
+                background: "linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)",
+                borderRadius: "12px",
+                padding: "16px",
+                color: "#ffffff",
+                boxShadow: "0 4px 14px rgba(79, 70, 229, 0.25)"
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                <span style={{ fontSize: "20px" }}>🌐</span>
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800 }}>In-Page "Need Help?" Launcher</h3>
+              </div>
+              <p style={{ margin: 0, fontSize: "12px", opacity: 0.9, lineHeight: 1.5 }}>
+                Provide visitors with a floating beacon badge directly on your website that reveals all available walkthroughs in a modern checklist.
+              </p>
+            </div>
+
+            {/* Widget Configuration Card */}
+            <div
+              style={{
+                background: "#ffffff",
+                borderRadius: "10px",
+                padding: "16px",
+                border: "1px solid #e2e8f0",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
+              }}
+            >
+              <h4 style={{ margin: "0 0 14px", fontSize: "13px", fontWeight: 700, color: "#1e293b" }}>
+                Widget Preferences
+              </h4>
+
+              {/* Enable Switch */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "10px 12px",
+                  background: "#f8fafc",
+                  borderRadius: "8px",
+                  border: "1px solid #e2e8f0",
+                  marginBottom: "12px"
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: "12.5px", color: "#1e293b" }}>Show Floating Launcher</div>
+                  <div style={{ fontSize: "11px", color: "#64748b" }}>Displays the ✨ Guides beacon on matched pages</div>
+                </div>
+                <label style={{ position: "relative", display: "inline-block", width: "42px", height: "24px", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={launcherEnabled}
+                    onChange={(e) => toggleLauncherEnabled(e.target.checked)}
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                  />
+                  <span
+                    style={{
+                      position: "absolute",
+                      cursor: "pointer",
+                      inset: 0,
+                      backgroundColor: launcherEnabled ? "#4f46e5" : "#cbd5e1",
+                      borderRadius: "24px",
+                      transition: "0.2s"
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: "absolute",
+                        content: '""',
+                        height: "18px",
+                        width: "18px",
+                        left: launcherEnabled ? "21px" : "3px",
+                        bottom: "3px",
+                        backgroundColor: "white",
+                        borderRadius: "50%",
+                        transition: "0.2s"
+                      }}
+                    />
+                  </span>
+                </label>
+              </div>
+
+              {/* Position Selector */}
+              <div style={{ marginBottom: "14px" }}>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#475569", marginBottom: "6px" }}>
+                  Screen Position
+                </label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                  <button
+                    type="button"
+                    onClick={() => changeLauncherPosition("bottom-right")}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: "6px",
+                      border: launcherPosition === "bottom-right" ? "2px solid #4f46e5" : "1px solid #e2e8f0",
+                      background: launcherPosition === "bottom-right" ? "#eef2ff" : "#ffffff",
+                      color: launcherPosition === "bottom-right" ? "#4338ca" : "#64748b",
+                      fontWeight: 700,
+                      fontSize: "12px",
+                      cursor: "pointer"
+                    }}
+                  >
+                    ↘ Bottom Right
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => changeLauncherPosition("bottom-left")}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: "6px",
+                      border: launcherPosition === "bottom-left" ? "2px solid #4f46e5" : "1px solid #e2e8f0",
+                      background: launcherPosition === "bottom-left" ? "#eef2ff" : "#ffffff",
+                      color: launcherPosition === "bottom-left" ? "#4338ca" : "#64748b",
+                      fontWeight: 700,
+                      fontSize: "12px",
+                      cursor: "pointer"
+                    }}
+                  >
+                    ↙ Bottom Left
+                  </button>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                <button
+                  type="button"
+                  onClick={testOpenWidget}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
+                    width: "100%",
+                    padding: "9px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: "linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)",
+                    color: "#ffffff",
+                    fontWeight: 700,
+                    fontSize: "12.5px",
+                    cursor: "pointer",
+                    boxShadow: "0 2px 6px rgba(79, 70, 229, 0.3)"
+                  }}
+                >
+                  🚀 Test Checklist on Webpage
+                </button>
+                <button
+                  type="button"
+                  onClick={resetProgress}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
+                    width: "100%",
+                    padding: "8px",
+                    borderRadius: "8px",
+                    border: "1px solid #cbd5e1",
+                    background: "#f8fafc",
+                    color: "#475569",
+                    fontWeight: 600,
+                    fontSize: "12px",
+                    cursor: "pointer"
+                  }}
+                >
+                  ↺ Reset Completed Progress ({completedJourneys.length} completed)
+                </button>
+              </div>
+            </div>
+
+            {/* Live Preview Card */}
+            <div
+              style={{
+                background: "#ffffff",
+                borderRadius: "10px",
+                padding: "16px",
+                border: "1px solid #e2e8f0"
+              }}
+            >
+              <h4 style={{ margin: "0 0 10px", fontSize: "13px", fontWeight: 700, color: "#1e293b" }}>
+                Live Widget Mockup
+              </h4>
+              <div
+                style={{
+                  background: "#f1f5f9",
+                  borderRadius: "8px",
+                  padding: "24px 16px",
+                  display: "flex",
+                  justifyContent: launcherPosition === "bottom-left" ? "flex-start" : "flex-end",
+                  border: "1px dashed #cbd5e1"
+                }}
+              >
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "8px 14px",
+                    background: "linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)",
+                    color: "#ffffff",
+                    borderRadius: "9999px",
+                    fontWeight: 600,
+                    fontSize: "12px",
+                    boxShadow: "0 8px 16px -4px rgba(79, 70, 229, 0.4)"
+                  }}
+                >
+                  <span>✨</span>
+                  <span>Guides</span>
+                  <span
+                    style={{
+                      background: "rgba(255,255,255,0.25)",
+                      padding: "1px 6px",
+                      borderRadius: "10px",
+                      fontSize: "10px",
+                      fontWeight: 700
+                    }}
+                  >
+                    {currentJourney.steps.length > 0 ? "1" : "0"}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </main>

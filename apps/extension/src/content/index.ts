@@ -12,12 +12,12 @@ import type {
 
 const RUN_STORAGE_KEY = "webjourney_active_run";
 
-const THEME_PALETTES: Record<string, { primary: string; gradient: string; accent: string; lightBg: string; text: string }> = {
-  indigo: { primary: "#4f46e5", gradient: "linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)", accent: "#4f46e5", lightBg: "#eef2ff", text: "#4338ca" },
-  emerald: { primary: "#059669", gradient: "linear-gradient(135deg, #059669 0%, #10b981 100%)", accent: "#059669", lightBg: "#ecfdf5", text: "#047857" },
-  violet: { primary: "#7c3aed", gradient: "linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)", accent: "#7c3aed", lightBg: "#f5f3ff", text: "#6d28d9" },
-  amber: { primary: "#d97706", gradient: "linear-gradient(135deg, #d97706 0%, #f59e0b 100%)", accent: "#d97706", lightBg: "#fffbeb", text: "#b45309" },
-  rose: { primary: "#e11d48", gradient: "linear-gradient(135deg, #e11d48 0%, #f43f5e 100%)", accent: "#e11d48", lightBg: "#fff1f2", text: "#be123c" }
+const THEME_PALETTES: Record<string, { name: string; primary: string; gradient: string; accent: string; lightBg: string; text: string }> = {
+  indigo: { name: "Royal Indigo", primary: "#4f46e5", gradient: "linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)", accent: "#4f46e5", lightBg: "#eef2ff", text: "#4338ca" },
+  emerald: { name: "Emerald Mint", primary: "#059669", gradient: "linear-gradient(135deg, #059669 0%, #10b981 100%)", accent: "#059669", lightBg: "#ecfdf5", text: "#047857" },
+  violet: { name: "Electric Violet", primary: "#7c3aed", gradient: "linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)", accent: "#7c3aed", lightBg: "#f5f3ff", text: "#6d28d9" },
+  amber: { name: "Sunset Amber", primary: "#d97706", gradient: "linear-gradient(135deg, #d97706 0%, #f59e0b 100%)", accent: "#d97706", lightBg: "#fffbeb", text: "#b45309" },
+  rose: { name: "Crimson Rose", primary: "#e11d48", gradient: "linear-gradient(135deg, #e11d48 0%, #f43f5e 100%)", accent: "#e11d48", lightBg: "#fff1f2", text: "#be123c" }
 };
 
 function escapeHtml(str: string): string {
@@ -39,6 +39,13 @@ class WebJourneyOverlay {
   private backdropEl: HTMLElement | null = null;
   private highlightBox: HTMLElement | null = null;
   private tooltipEl: HTMLElement | null = null;
+  private launcherEl: HTMLButtonElement | null = null;
+  private checklistEl: HTMLDivElement | null = null;
+  private launcherEnabled: boolean = true;
+  private launcherPosition: "bottom-right" | "bottom-left" = "bottom-right";
+  private completedJourneyIds: Set<string> = new Set();
+  private availableJourneys: Journey[] = [];
+  private isChecklistOpen: boolean = false;
   private activeTargetEl: Element | null = null;
   private currentStep: StepDefinition | null = null;
   private isInspecting: boolean = false;
@@ -57,6 +64,8 @@ class WebJourneyOverlay {
     this.initMessageListener();
     this.initScrollAndResizeListeners();
     this.initKeyboardNavigation();
+    this.initStorageListener();
+    this.refreshAvailableJourneys();
     this.checkResumableRun();
   }
 
@@ -369,11 +378,212 @@ class WebJourneyOverlay {
         margin-bottom: 10px;
         font-size: 12px;
       }
+      /* In-Page Launcher & Checklist Styles */
+      .wj-launcher-btn {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        display: none;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 16px;
+        background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%);
+        color: #ffffff;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        font-size: 13px;
+        font-weight: 600;
+        border-radius: 9999px;
+        border: none;
+        cursor: pointer;
+        pointer-events: auto;
+        box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.4), 0 8px 10px -6px rgba(79, 70, 229, 0.2);
+        z-index: 2147483641;
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        user-select: none;
+      }
+      .wj-launcher-btn:hover {
+        transform: translateY(-2px) scale(1.02);
+        box-shadow: 0 14px 28px -5px rgba(79, 70, 229, 0.5), 0 10px 10px -5px rgba(79, 70, 229, 0.3);
+      }
+      .wj-launcher-btn:active {
+        transform: translateY(0) scale(0.98);
+      }
+      .wj-launcher-btn.wj-launcher-bottom-left {
+        left: 24px;
+        right: auto;
+      }
+      .wj-launcher-icon {
+        font-size: 15px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .wj-launcher-count {
+        background: rgba(255, 255, 255, 0.25);
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        font-size: 11px;
+        font-weight: 700;
+        padding: 1px 7px;
+        border-radius: 9999px;
+        margin-left: 2px;
+      }
+      .wj-checklist-card {
+        position: fixed;
+        bottom: 74px;
+        right: 24px;
+        width: 340px;
+        max-width: calc(100vw - 48px);
+        background: #ffffff;
+        color: #0f172a;
+        border-radius: 16px;
+        box-shadow: 0 20px 40px -8px rgba(15, 23, 42, 0.3), 0 0 0 1px rgba(226, 232, 240, 0.9);
+        overflow: hidden;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        pointer-events: auto;
+        z-index: 2147483642;
+        display: none;
+        animation: wjPopoverIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .wj-checklist-card.wj-checklist-bottom-left {
+        left: 24px;
+        right: auto;
+      }
+      @keyframes wjPopoverIn {
+        from { opacity: 0; transform: translateY(12px) scale(0.95); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
+      .wj-checklist-header {
+        padding: 14px 16px 12px;
+        background: #ffffff;
+        border-bottom: 1px solid #f1f5f9;
+      }
+      .wj-checklist-header-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 4px;
+      }
+      .wj-checklist-title {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 700;
+        color: #0f172a;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .wj-checklist-desc {
+        margin: 0 0 10px;
+        font-size: 12px;
+        color: #64748b;
+        line-height: 1.4;
+      }
+      .wj-checklist-progress-text {
+        font-size: 11px;
+        color: #475569;
+        font-weight: 600;
+        display: flex;
+        justify-content: space-between;
+      }
+      .wj-checklist-progress-bar-bg {
+        width: 100%;
+        height: 6px;
+        background: #f1f5f9;
+        border-radius: 9999px;
+        overflow: hidden;
+        margin-top: 5px;
+      }
+      .wj-checklist-progress-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #4f46e5 0%, #10b981 100%);
+        border-radius: 9999px;
+        transition: width 0.3s ease;
+      }
+      .wj-checklist-body {
+        max-height: 280px;
+        overflow-y: auto;
+        padding: 10px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .wj-checklist-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid #e2e8f0;
+        background: #f8fafc;
+        transition: all 0.15s ease;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      .wj-checklist-item:hover {
+        background: #ffffff;
+        border-color: #cbd5e1;
+        box-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.08);
+        transform: translateY(-1px);
+      }
+      .wj-checklist-item-info {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        flex: 1;
+        min-width: 0;
+        margin-right: 10px;
+      }
+      .wj-checklist-item-title {
+        font-size: 12.5px;
+        font-weight: 600;
+        color: #1e293b;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .wj-checklist-item-meta {
+        font-size: 11px;
+        color: #64748b;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .wj-checklist-status-icon {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        flex-shrink: 0;
+      }
+      .wj-checklist-status-completed {
+        background: #ecfdf5;
+        color: #059669;
+        border: 1.5px solid #a7f3d0;
+      }
+      .wj-checklist-status-pending {
+        background: #eef2ff;
+        color: #4f46e5;
+        border: 1.5px solid #c7d2fe;
+      }
+      .wj-checklist-footer {
+        padding: 8px 16px;
+        background: #f8fafc;
+        border-top: 1px solid #f1f5f9;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 11px;
+        color: #94a3b8;
+      }
     `;
     this.shadow.appendChild(style);
 
     this.backdropEl = document.createElement("div");
     this.backdropEl.className = "wj-backdrop";
+    this.backdropEl.style.display = "none";
     this.backdropEl.innerHTML = `
       <svg class="wj-backdrop-svg" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
         <defs>
@@ -405,6 +615,23 @@ class WebJourneyOverlay {
     this.tooltipEl.className = "wj-tooltip-card";
     this.tooltipEl.style.display = "none";
     this.shadow.appendChild(this.tooltipEl);
+
+    this.checklistEl = document.createElement("div");
+    this.checklistEl.className = "wj-checklist-card";
+    this.checklistEl.style.display = "none";
+    this.shadow.appendChild(this.checklistEl);
+
+    this.launcherEl = document.createElement("button");
+    this.launcherEl.className = "wj-launcher-btn";
+    this.launcherEl.style.display = "none";
+    this.launcherEl.setAttribute("type", "button");
+    this.launcherEl.setAttribute("aria-label", "WebJourney Guides");
+    this.launcherEl.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.toggleChecklist();
+    });
+    this.shadow.appendChild(this.launcherEl);
 
     document.documentElement.appendChild(this.host);
   }
@@ -438,6 +665,7 @@ class WebJourneyOverlay {
 
   private showBackdrop() {
     if (!this.backdropEl || !this.host) return;
+    this.updateLauncherVisibility(false);
     this.host.style.position = "fixed";
     this.host.style.inset = "0";
     this.host.style.width = "100vw";
@@ -464,6 +692,7 @@ class WebJourneyOverlay {
       this.host.style.height = "0";
       this.host.style.pointerEvents = "none";
     }
+    this.updateLauncherVisibility(true);
   }
 
   private updateBackdropSpotlight(rect?: DOMRect) {
@@ -712,6 +941,13 @@ class WebJourneyOverlay {
     const theme = this.getJourneyTheme(journey);
     this.tooltipEl.querySelector(".wj-tooltip-arrow")?.remove();
     this.fireConfetti();
+
+    this.completedJourneyIds.add(journey.id);
+    if (chrome.storage?.local) {
+      chrome.storage.local.set({
+        webjourney_completed_journeys: Array.from(this.completedJourneyIds)
+      });
+    }
 
     this.tooltipEl.innerHTML = `
       <div class="wj-card-accent-bar" style="background: ${theme.gradient};"></div>
@@ -1022,6 +1258,349 @@ class WebJourneyOverlay {
     }
     this.stopConfetti();
     this.hideBackdrop();
+    this.updateLauncherVisibility(true);
+    this.refreshAvailableJourneys();
+  }
+
+  private initStorageListener() {
+    if (chrome.storage?.onChanged) {
+      chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName === "local") {
+          if (
+            changes.webjourney_launcher_enabled ||
+            changes.webjourney_launcher_position ||
+            changes.webjourney_completed_journeys ||
+            changes.webjourney_invitations ||
+            changes.webjourney_local_draft
+          ) {
+            this.refreshAvailableJourneys();
+          }
+        }
+      });
+    }
+  }
+
+  public refreshAvailableJourneys() {
+    if (!chrome.storage?.local) {
+      this.checkFallbackSample();
+      return;
+    }
+
+    chrome.storage.local.get([
+      "webjourney_launcher_enabled",
+      "webjourney_launcher_position",
+      "webjourney_completed_journeys",
+      "webjourney_invitations",
+      "webjourney_local_draft"
+    ], (res) => {
+      this.launcherEnabled = res.webjourney_launcher_enabled !== false;
+      this.launcherPosition = res.webjourney_launcher_position || "bottom-right";
+      const completed: string[] = res.webjourney_completed_journeys || [];
+      this.completedJourneyIds = new Set(completed);
+
+      const list: Journey[] = [];
+      const currentOrigin = window.location.origin;
+      const currentUrl = window.location.href;
+
+      const invites = res.webjourney_invitations || {};
+      for (const code of Object.keys(invites)) {
+        const j = invites[code]?.journeySnapshot;
+        if (j && j.steps && j.steps.length > 0) {
+          const matchOrigin = (j.allowedOrigins || []).some((o: string) =>
+            currentOrigin.startsWith(o) || o.startsWith(currentOrigin)
+          );
+          const matchUrl = j.startUrl && (currentUrl.includes(j.startUrl) || j.startUrl.includes(currentOrigin));
+          if (matchOrigin || matchUrl) {
+            if (!list.some((item) => item.id === j.id)) {
+              list.push(j);
+            }
+          }
+        }
+      }
+
+      const draft: Journey = res.webjourney_local_draft;
+      if (draft && draft.steps && draft.steps.length > 0) {
+        const matchOrigin = (draft.allowedOrigins || []).some((o: string) =>
+          currentOrigin.startsWith(o) || o.startsWith(currentOrigin)
+        );
+        const matchUrl = draft.startUrl && (currentUrl.includes(draft.startUrl) || draft.startUrl.includes(currentOrigin));
+        if ((matchOrigin || matchUrl) && !list.some((item) => item.id === draft.id)) {
+          list.push(draft);
+        }
+      }
+
+      // Default sample for codevioso.com if no stored journey
+      if (list.length === 0 && (currentUrl.includes("codevioso.com") || currentOrigin.includes("codevioso.com"))) {
+        list.push({
+          schemaVersion: 1,
+          id: "11111111-2222-3333-4444-555555555555",
+          name: "Codevioso Website Onboarding Tour",
+          description: "Interactive guided tour of Codevioso web services, digital products, and contact channels.",
+          themeColor: "emerald",
+          allowedOrigins: ["https://codevioso.com"],
+          startUrl: "https://codevioso.com/",
+          createdAt: "2026-09-19T12:00:00.000Z",
+          updatedAt: "2026-09-19T12:00:00.000Z",
+          steps: [
+            {
+              id: "step-1",
+              order: 0,
+              title: "Welcome to Codevioso",
+              instruction: "Welcome! Codevioso delivers high-grade software solutions. Click the logo or continue.",
+              action: "click",
+              target: {
+                selectorCandidates: ["header > div:nth-of-type(1) > a", "#cv-nav a.cv-nav__logo", "header a[href*='codevioso.com']"],
+                tagName: "a",
+                textContentSnippet: "Codevioso"
+              },
+              timeoutMs: 30000,
+              allowSkip: true,
+              showExitButton: true
+            },
+            {
+              id: "step-2",
+              order: 1,
+              title: "Discover Tailored Services",
+              instruction: "Review engineering expertise across web applications, scalable APIs, and bespoke systems.",
+              action: "click",
+              target: {
+                selectorCandidates: ["header > div:nth-of-type(1) > nav > ul > li:nth-of-type(2) > a", "nav a[href*='services']"],
+                tagName: "a",
+                textContentSnippet: "Services"
+              },
+              timeoutMs: 30000,
+              allowSkip: true,
+              showExitButton: true
+            }
+          ]
+        });
+      }
+
+      this.availableJourneys = list;
+      this.updateLauncherAndChecklist();
+    });
+  }
+
+  private checkFallbackSample() {
+    const currentOrigin = window.location.origin;
+    const currentUrl = window.location.href;
+    if (currentUrl.includes("codevioso.com") || currentOrigin.includes("codevioso.com")) {
+      this.availableJourneys = [{
+        schemaVersion: 1,
+        id: "11111111-2222-3333-4444-555555555555",
+        name: "Codevioso Website Onboarding Tour",
+        description: "Interactive guided tour of Codevioso web services, digital products, and contact channels.",
+        themeColor: "emerald",
+        allowedOrigins: ["https://codevioso.com"],
+        startUrl: "https://codevioso.com/",
+        createdAt: "2026-09-19T12:00:00.000Z",
+        updatedAt: "2026-09-19T12:00:00.000Z",
+        steps: [
+          {
+            id: "step-1",
+            order: 0,
+            title: "Welcome to Codevioso",
+            instruction: "Welcome! Codevioso delivers high-grade software solutions. Click the logo or continue.",
+            action: "click",
+            target: {
+              selectorCandidates: ["header > div:nth-of-type(1) > a", "#cv-nav a.cv-nav__logo", "header a[href*='codevioso.com']"],
+              tagName: "a",
+              textContentSnippet: "Codevioso"
+            },
+            timeoutMs: 30000,
+            allowSkip: true,
+            showExitButton: true
+          }
+        ]
+      }];
+      this.updateLauncherAndChecklist();
+    }
+  }
+
+  public updateLauncherVisibility(visible: boolean) {
+    if (!this.launcherEl) return;
+    if (!visible || !this.launcherEnabled || this.player.getState() !== "idle") {
+      this.launcherEl.style.display = "none";
+      if (this.checklistEl) this.checklistEl.style.display = "none";
+      this.isChecklistOpen = false;
+    } else {
+      if (this.availableJourneys.length > 0) {
+        this.launcherEl.style.display = "flex";
+      }
+    }
+  }
+
+  public updateLauncherAndChecklist() {
+    if (!this.shadow) return;
+
+    if (!this.launcherEnabled || this.availableJourneys.length === 0) {
+      if (this.launcherEl) this.launcherEl.style.display = "none";
+      if (this.checklistEl) this.checklistEl.style.display = "none";
+      return;
+    }
+
+    if (!this.launcherEl) {
+      this.launcherEl = document.createElement("button");
+      this.launcherEl.className = "wj-launcher-btn";
+      this.launcherEl.setAttribute("type", "button");
+      this.launcherEl.setAttribute("aria-label", "WebJourney Guides");
+      this.launcherEl.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.toggleChecklist();
+      });
+      this.shadow.appendChild(this.launcherEl);
+    }
+
+    this.launcherEl.className = `wj-launcher-btn ${
+      this.launcherPosition === "bottom-left" ? "wj-launcher-bottom-left" : ""
+    }`;
+
+    const completedCount = this.availableJourneys.filter((j) => this.completedJourneyIds.has(j.id)).length;
+    const totalCount = this.availableJourneys.length;
+
+    this.launcherEl.innerHTML = `
+      <span class="wj-launcher-icon">✨</span>
+      <span>Guides</span>
+      <span class="wj-launcher-count">${completedCount > 0 ? `✓ ${completedCount}/${totalCount}` : `${totalCount}`}</span>
+    `;
+
+    if (this.player.getState() === "idle" && (!this.backdropEl || this.backdropEl.style.display === "none" || this.backdropEl.style.display === "")) {
+      this.launcherEl.style.display = "flex";
+    } else {
+      this.launcherEl.style.display = "none";
+    }
+
+    if (!this.checklistEl) {
+      this.checklistEl = document.createElement("div");
+      this.checklistEl.className = "wj-checklist-card";
+      this.shadow.appendChild(this.checklistEl);
+    }
+
+    this.checklistEl.className = `wj-checklist-card ${
+      this.launcherPosition === "bottom-left" ? "wj-checklist-bottom-left" : ""
+    }`;
+
+    if (this.isChecklistOpen) {
+      this.renderChecklist();
+    }
+  }
+
+  public openChecklist() {
+    this.isChecklistOpen = true;
+    this.renderChecklist();
+  }
+
+  public closeChecklist() {
+    this.isChecklistOpen = false;
+    if (this.checklistEl) {
+      this.checklistEl.style.display = "none";
+    }
+  }
+
+  public toggleChecklist() {
+    if (this.isChecklistOpen) {
+      this.closeChecklist();
+    } else {
+      this.openChecklist();
+    }
+  }
+
+  private renderChecklist() {
+    if (!this.checklistEl) return;
+
+    const totalCount = this.availableJourneys.length;
+    const completedCount = this.availableJourneys.filter((j) => this.completedJourneyIds.has(j.id)).length;
+    const percent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+    this.checklistEl.innerHTML = `
+      <div class="wj-card-accent-bar" style="background: linear-gradient(90deg, #4f46e5 0%, #10b981 100%);"></div>
+      <div class="wj-checklist-header">
+        <div class="wj-checklist-header-top">
+          <h3 class="wj-checklist-title">
+            <span>✨</span> Interactive Guides
+          </h3>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            ${completedCount > 0 ? '<button id="wj-reset-progress-btn" class="wj-badge" style="background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; cursor: pointer;" title="Reset progress for testing">↺ Reset</button>' : ''}
+            <button id="wj-checklist-close-btn" class="wj-close-btn" title="Close Checklist">&times;</button>
+          </div>
+        </div>
+        <p class="wj-checklist-desc">Interactive step-by-step guides to help you navigate this site.</p>
+        <div class="wj-checklist-progress-text">
+          <span>Overall Progress</span>
+          <span>${completedCount} of ${totalCount} completed (${percent}%)</span>
+        </div>
+        <div class="wj-checklist-progress-bar-bg">
+          <div class="wj-checklist-progress-bar-fill" style="width: ${percent}%;"></div>
+        </div>
+      </div>
+      <div class="wj-checklist-body">
+        ${
+          this.availableJourneys.map((j) => {
+            const isDone = this.completedJourneyIds.has(j.id);
+            const theme = this.getJourneyTheme(j);
+            return `
+              <div class="wj-checklist-item" data-journey-id="${j.id}">
+                <div class="wj-checklist-status-icon ${isDone ? 'wj-checklist-status-completed' : 'wj-checklist-status-pending'}" style="${!isDone ? `border-color: ${theme.primary}50; background: ${theme.lightBg}; color: ${theme.text};` : ''}">
+                  ${isDone ? "✓" : "▶"}
+                </div>
+                <div class="wj-checklist-item-info">
+                  <div class="wj-checklist-item-title">${escapeHtml(j.name)}</div>
+                  <div class="wj-checklist-item-meta">
+                    <span>${j.steps.length} ${j.steps.length === 1 ? 'step' : 'steps'}</span>
+                    <span>•</span>
+                    <span style="color: ${theme.text}; font-weight: 600;">${theme.name || 'Theme'}</span>
+                  </div>
+                </div>
+                <button class="wj-button ${isDone ? 'wj-button-secondary' : ''}" style="${!isDone ? `background: ${theme.gradient};` : ''} padding: 5px 10px; font-size: 11px;">
+                  ${isDone ? "Replay" : "Start"}
+                </button>
+              </div>
+            `;
+          }).join("")
+        }
+      </div>
+      <div class="wj-checklist-footer">
+        <span>⚡ Powered by WebJourney</span>
+        <span style="font-size: 10px;">${window.location.hostname}</span>
+      </div>
+    `;
+
+    this.checklistEl.style.display = "block";
+
+    this.checklistEl.querySelector("#wj-checklist-close-btn")?.addEventListener("click", () => {
+      this.closeChecklist();
+    });
+
+    this.checklistEl.querySelector("#wj-reset-progress-btn")?.addEventListener("click", () => {
+      this.resetProgress();
+    });
+
+    const items = this.checklistEl.querySelectorAll<HTMLDivElement>(".wj-checklist-item");
+    items.forEach((item) => {
+      item.addEventListener("click", () => {
+        const id = item.getAttribute("data-journey-id");
+        const found = this.availableJourneys.find((j) => j.id === id);
+        if (found) {
+          this.closeChecklist();
+          this.showBackdrop();
+          this.player.start(found);
+        }
+      });
+    });
+  }
+
+  public resetProgress() {
+    this.completedJourneyIds.clear();
+    if (chrome.storage?.local) {
+      chrome.storage.local.set({ webjourney_completed_journeys: [] }, () => {
+        this.renderChecklist();
+        this.updateLauncherAndChecklist();
+      });
+    } else {
+      this.renderChecklist();
+      this.updateLauncherAndChecklist();
+    }
   }
 
   private initMessageListener() {
@@ -1082,6 +1661,31 @@ class WebJourneyOverlay {
           this.player.stop();
           this.clearHighlight();
           sendResponse({ success: true });
+          break;
+
+        case "OPEN_LAUNCHER_CHECKLIST":
+          this.openChecklist();
+          sendResponse({ success: true });
+          break;
+
+        case "CLOSE_LAUNCHER_CHECKLIST":
+          this.closeChecklist();
+          sendResponse({ success: true });
+          break;
+
+        case "RESET_CHECKLIST_PROGRESS":
+          this.resetProgress();
+          sendResponse({ success: true });
+          break;
+
+        case "GET_LAUNCHER_STATE":
+          sendResponse({
+            enabled: this.launcherEnabled,
+            position: this.launcherPosition,
+            availableCount: this.availableJourneys.length,
+            completedCount: this.availableJourneys.filter((j) => this.completedJourneyIds.has(j.id)).length,
+            isOpen: this.isChecklistOpen
+          });
           break;
       }
       return true;
@@ -1150,6 +1754,12 @@ window.addEventListener("message", (event) => {
     if (event.data.journey) {
       overlay.renderCompletionCard(event.data.journey);
     }
+  } else if (event.data?.type === "WJ_TEST_LAUNCHER_OPEN") {
+    overlay.openChecklist();
+  } else if (event.data?.type === "WJ_TEST_LAUNCHER_CLOSE") {
+    overlay.closeChecklist();
+  } else if (event.data?.type === "WJ_TEST_RESET_PROGRESS") {
+    overlay.resetProgress();
   } else if (event.data?.type === "WJ_TEST_STOP") {
     overlay.clearHighlight();
   }
