@@ -16,6 +16,7 @@
     "build:ext": "npm run build --workspace=@webjourney/extension"
   },
   "devDependencies": {
+    "happy-dom": "^20.14.5",
     "typescript": "^5.7.3",
     "vitest": "^3.0.7"
   }

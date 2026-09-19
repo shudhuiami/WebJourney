@@ -43,11 +43,11 @@ flowchart LR
 ## Phase 2 — Visual Authoring Experience
 *Goal: Enable non-technical authors to visually select targets and create 5-step journeys.*
 
-- [ ] **WJ-201**: Implement interactive element picker with hovering inspector and scroll/resize handling.
-- [ ] **WJ-202**: Implement multi-heuristic target fingerprinting (IDs, stable data attributes, accessible roles/labels, selector fallback hierarchy).
-- [ ] **WJ-203**: Build Side Panel Step Editor: instruction copy, action type (click, type-completed, navigation, manual continue), timeouts, reordering.
-- [ ] **WJ-204**: Step preview & live test mode in the active tab with error diagnostic badges.
-- [ ] **WJ-205**: Local draft persistence (`chrome.storage.local`) with export/import capabilities.
+- [x] **WJ-201**: Implement interactive element picker with hovering inspector and scroll/resize handling.
+- [x] **WJ-202**: Implement multi-heuristic target fingerprinting (IDs, stable data attributes, accessible roles/labels, selector fallback hierarchy).
+- [x] **WJ-203**: Build Side Panel Step Editor: instruction copy, action type (click, type-completed, navigation, manual continue), timeouts, reordering.
+- [x] **WJ-204**: Step preview & live test mode in the active tab with error diagnostic badges.
+- [x] **WJ-205**: Local draft persistence (`chrome.storage.local`) with export/import capabilities.
 
 ---
 
