@@ -198,6 +198,18 @@ export function SidePanel() {
     reader.readAsText(file);
   };
 
+  const runFullJourney = async () => {
+    if (!activeTab.id || currentJourney.steps.length === 0) {
+      setStatusMessage("Add at least 1 step before running walkthrough.");
+      return;
+    }
+    await sendTabMessage(activeTab.id, {
+      type: "PLAYER_START",
+      journey: currentJourney
+    });
+    setStatusMessage("Walkthrough launched on page! Follow the highlights.");
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#f8fafc" }}>
       {/* Top Header */}
@@ -229,12 +241,18 @@ export function SidePanel() {
                 fontWeight: 700,
                 fontSize: "14px",
                 color: "#0f172a",
-                width: "160px",
+                width: "140px",
                 outline: "none"
               }}
             />
           </div>
           <div style={{ display: "flex", gap: "6px" }}>
+            <button
+              onClick={runFullJourney}
+              style={{ padding: "4px 8px", fontSize: "11px", background: "#2563eb", color: "#fff", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: 600 }}
+            >
+              ▶ Play
+            </button>
             <button
               onClick={exportJourneyJSON}
               title="Export JSON"

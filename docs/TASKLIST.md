@@ -54,16 +54,16 @@ flowchart LR
 ## Phase 3 — Player Engine & Overlay
 *Goal: Provide a rock-solid, accessible on-page guided experience that observes completion without interfering with the host page.*
 
-- [ ] **WJ-301**: Implement finite-state player engine (`packages/step-engine`): `idle -> resolving -> active -> verifying -> advance/retry/blocked -> finished`.
-- [ ] **WJ-302**: Implement completion observers:
+- [x] **WJ-301**: Implement finite-state player engine (`packages/step-engine`): `idle -> resolving -> active -> verifying -> advance/retry/blocked -> finished`.
+- [x] **WJ-302**: Implement completion observers:
   - Click observer (trusted event on target)
   - Field-complete observer (presence/focus/non-empty without capturing input values)
   - Navigation observer (URL matcher / path transition)
   - Manual continue observer
-- [ ] **WJ-303**: Handle SPA route changes, dynamic DOM mutations, and viewports with throttling & clean listener teardown.
-- [ ] **WJ-304**: Build Shadow-DOM player overlay: spotlight highlight, floating adaptive tooltip, back/pause/resume/exit controls.
-- [ ] **WJ-305**: Resumable run state in `chrome.storage.local` with session recovery on page reload.
-- [ ] **WJ-306**: Broken target recovery flow (missing target detection, retry prompt, skip policy, issue logger).
+- [x] **WJ-303**: Handle SPA route changes, dynamic DOM mutations, and viewports with throttling & clean listener teardown.
+- [x] **WJ-304**: Build Shadow-DOM player overlay: spotlight highlight, floating adaptive tooltip, back/pause/resume/exit controls.
+- [x] **WJ-305**: Resumable run state in `chrome.storage.local` with session recovery on page reload.
+- [x] **WJ-306**: Broken target recovery flow (missing target detection, retry prompt, skip policy, issue logger).
 
 ---
 

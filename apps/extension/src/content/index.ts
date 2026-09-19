@@ -1,11 +1,8 @@
-// WebJourney Content Script with Shadow DOM Isolation and Resilient Tracking
+// WebJourney Content Script with Shadow DOM Isolation & Interactive Journey Player
+import { JourneyPlayer, type PlayerContext } from "@webjourney/step-engine";
+import type { Journey, StepDefinition } from "@webjourney/journey-schema";
 
-interface StepOverlayOptions {
-  title?: string;
-  instruction?: string;
-  actionType?: string;
-  showContinue?: boolean;
-}
+const RUN_STORAGE_KEY = "webjourney_active_run";
 
 class WebJourneyOverlay {
   private host: HTMLElement | null = null;
@@ -15,11 +12,19 @@ class WebJourneyOverlay {
   private activeTargetEl: Element | null = null;
   private isInspecting: boolean = false;
   private rafId: number | null = null;
+  private player: JourneyPlayer;
 
   constructor() {
     this.initShadowHost();
+    this.player = new JourneyPlayer({
+      onStateChange: this.handlePlayerStateChange.bind(this),
+      onHighlightTarget: this.highlightStepTarget.bind(this),
+      onClearHighlight: this.clearHighlight.bind(this)
+    });
     this.initMessageListener();
     this.initScrollAndResizeListeners();
+    this.initKeyboardNavigation();
+    this.checkResumableRun();
   }
 
   private initShadowHost() {
@@ -74,10 +79,10 @@ class WebJourneyOverlay {
         background: #ffffff;
         color: #0f172a;
         padding: 16px;
-        border-radius: 10px;
+        border-radius: 12px;
         box-shadow: 0 20px 25px -5px rgba(0,0,0,0.15), 0 8px 10px -6px rgba(0,0,0,0.1);
         border: 1px solid #e2e8f0;
-        width: 280px;
+        width: 320px;
         font-size: 13px;
         line-height: 1.5;
         z-index: 2147483647;
@@ -94,30 +99,46 @@ class WebJourneyOverlay {
         justify-content: space-between;
         margin-bottom: 8px;
       }
+      .wj-step-counter {
+        font-size: 11px;
+        font-weight: 700;
+        color: #2563eb;
+        background: #eff6ff;
+        padding: 2px 8px;
+        border-radius: 4px;
+      }
       .wj-badge {
         font-size: 10px;
         font-weight: 700;
         text-transform: uppercase;
         padding: 2px 6px;
         border-radius: 4px;
-        background: #eff6ff;
-        color: #1d4ed8;
+        background: #f1f5f9;
+        color: #475569;
       }
       .wj-title {
-        font-size: 14px;
+        font-size: 15px;
         font-weight: 700;
         margin: 0;
         color: #0f172a;
       }
       .wj-instruction {
-        margin: 8px 0 12px;
+        margin: 8px 0 14px;
         color: #334155;
+      }
+      .wj-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 12px;
+        padding-top: 10px;
+        border-top: 1px solid #f1f5f9;
       }
       .wj-button {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        padding: 8px 14px;
+        padding: 6px 12px;
         font-size: 12px;
         font-weight: 600;
         border-radius: 6px;
@@ -127,8 +148,21 @@ class WebJourneyOverlay {
         color: #ffffff;
         transition: background 0.15s ease;
       }
-      .wj-button:hover {
-        background: #1d4ed8;
+      .wj-button:hover { background: #1d4ed8; }
+      .wj-button-secondary {
+        background: #f1f5f9;
+        color: #334155;
+        border: 1px solid #cbd5e1;
+      }
+      .wj-button-secondary:hover { background: #e2e8f0; }
+      .wj-error-box {
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        color: #991b1b;
+        padding: 10px;
+        border-radius: 6px;
+        margin-bottom: 10px;
+        font-size: 12px;
       }
     `;
     this.shadow.appendChild(style);
@@ -160,52 +194,128 @@ class WebJourneyOverlay {
     window.addEventListener("resize", scheduleUpdate, { passive: true });
   }
 
-  private initMessageListener() {
-    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-      switch (message.type) {
-        case "START_INSPECTOR":
-          this.startInspector();
-          sendResponse({ success: true });
-          break;
-
-        case "STOP_INSPECTOR":
+  private initKeyboardNavigation() {
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        if (this.isInspecting) {
           this.stopInspector();
-          sendResponse({ success: true });
-          break;
-
-        case "HIGHLIGHT_TARGET":
-        case "TEST_HIGHLIGHT":
-          this.highlightSelector(message.selector, {
-            title: message.step?.title || "Selected Target",
-            instruction: message.step?.instruction || "Target successfully highlighted with Shadow DOM isolation.",
-            actionType: message.step?.action || "click",
-            showContinue: true
-          });
-          sendResponse({ success: true });
-          break;
-
-        case "CLEAR_HIGHLIGHT":
-          this.clearHighlight();
-          sendResponse({ success: true });
-          break;
-
-        case "TEARDOWN":
-          this.teardown();
-          sendResponse({ success: true });
-          break;
+        } else if (this.player.getState() === "active") {
+          this.player.pause();
+        }
       }
-      return true;
     });
   }
 
-  public highlightElement(el: Element, label?: string, options?: StepOverlayOptions) {
-    if (!this.highlightBox || !this.tooltipEl) return;
-    this.activeTargetEl = el;
-
-    this.repositionHighlightAndTooltip(el, label, options);
+  private checkResumableRun() {
+    if (chrome.storage?.local) {
+      chrome.storage.local.get([RUN_STORAGE_KEY], (res) => {
+        const saved = res[RUN_STORAGE_KEY];
+        if (saved && saved.journey && saved.status === "active") {
+          this.player.start(saved.journey, saved.currentStepIndex || 0);
+        }
+      });
+    }
   }
 
-  private repositionHighlightAndTooltip(el: Element, label?: string, options?: StepOverlayOptions) {
+  private handlePlayerStateChange(context: PlayerContext) {
+    // Persist progress to local storage
+    if (chrome.storage?.local) {
+      if (context.state === "completed" || context.state === "idle") {
+        chrome.storage.local.remove([RUN_STORAGE_KEY]);
+      } else {
+        chrome.storage.local.set({
+          [RUN_STORAGE_KEY]: {
+            journey: context.journey,
+            currentStepIndex: context.currentStepIndex,
+            status: context.state
+          }
+        });
+      }
+    }
+
+    if (context.state === "completed") {
+      this.renderCompletionCard(context.journey!);
+    } else if (context.state === "blocked") {
+      this.renderBlockedCard(context);
+    }
+  }
+
+  private renderBlockedCard(context: PlayerContext) {
+    if (!this.tooltipEl) return;
+    const currentStep = context.journey?.steps[context.currentStepIndex];
+
+    this.tooltipEl.innerHTML = `
+      <div class="wj-tooltip-header">
+        <span class="wj-step-counter">Step ${context.currentStepIndex + 1} of ${context.journey?.steps.length}</span>
+        <span class="wj-badge" style="background: #fee2e2; color: #b91c1c;">Target Issue</span>
+      </div>
+      <h4 class="wj-title">${currentStep?.title || "Target Not Found"}</h4>
+      <div class="wj-error-box">
+        ${context.errorMessage || "Unable to locate the required element on this page."}
+      </div>
+      <div class="wj-instruction">
+        ${currentStep?.fallbackInstruction || "You can retry locating the element or skip this step to proceed."}
+      </div>
+      <div class="wj-footer">
+        <button class="wj-button wj-button-secondary" id="wj-retry-btn">&#x21bb; Retry</button>
+        <div style="display: flex; gap: 6px;">
+          ${
+            currentStep?.allowSkip
+              ? '<button class="wj-button" id="wj-skip-btn">Skip Step &rarr;</button>'
+              : ""
+          }
+          <button class="wj-button wj-button-secondary" id="wj-exit-btn">Exit</button>
+        </div>
+      </div>
+    `;
+
+    this.tooltipEl.style.display = "block";
+    this.tooltipEl.style.top = "80px";
+    this.tooltipEl.style.left = "30px";
+
+    this.tooltipEl.querySelector("#wj-retry-btn")?.addEventListener("click", () => {
+      this.player.resume();
+    });
+    this.tooltipEl.querySelector("#wj-skip-btn")?.addEventListener("click", () => {
+      this.player.skipStep();
+    });
+    this.tooltipEl.querySelector("#wj-exit-btn")?.addEventListener("click", () => {
+      this.player.stop();
+    });
+  }
+
+  private renderCompletionCard(journey: Journey) {
+    if (!this.tooltipEl) return;
+
+    this.tooltipEl.innerHTML = `
+      <div class="wj-tooltip-header">
+        <span class="wj-badge" style="background: #dcfce7; color: #15803d;">Complete</span>
+      </div>
+      <h4 class="wj-title">🎉 Walkthrough Complete!</h4>
+      <div class="wj-instruction">
+        You have successfully completed <strong>${journey.name}</strong> (${journey.steps.length} steps).
+      </div>
+      <div class="wj-footer" style="justify-content: flex-end;">
+        <button class="wj-button" id="wj-finish-btn">Finish & Close</button>
+      </div>
+    `;
+
+    this.tooltipEl.style.display = "block";
+    this.tooltipEl.style.top = "80px";
+    this.tooltipEl.style.left = "30px";
+
+    this.tooltipEl.querySelector("#wj-finish-btn")?.addEventListener("click", () => {
+      this.player.stop();
+      this.clearHighlight();
+    });
+  }
+
+  private highlightStepTarget(el: Element, step: StepDefinition) {
+    this.activeTargetEl = el;
+    this.repositionHighlightAndTooltip(el, undefined, step);
+  }
+
+  private repositionHighlightAndTooltip(el: Element, label?: string, step?: StepDefinition) {
     if (!this.highlightBox || !this.tooltipEl) return;
 
     const rect = el.getBoundingClientRect();
@@ -230,52 +340,52 @@ class WebJourneyOverlay {
       badge.remove();
     }
 
-    // Render Tooltip Card if options provided
-    if (options) {
+    if (step) {
+      const currentIdx = this.player.getContext().currentStepIndex;
+      const totalSteps = this.player.getContext().journey?.steps.length || 1;
+
       this.tooltipEl.innerHTML = `
         <div class="wj-tooltip-header">
-          <span class="wj-badge">${options.actionType || "Step"}</span>
+          <span class="wj-step-counter">Step ${currentIdx + 1} of ${totalSteps}</span>
+          <span class="wj-badge">${step.action}</span>
         </div>
-        <h4 class="wj-title">${options.title || "Target Highlighted"}</h4>
-        <div class="wj-instruction">${options.instruction || ""}</div>
-        ${
-          options.showContinue
-            ? '<button class="wj-button" id="wj-step-continue-btn">Continue &rarr;</button>'
-            : ""
-        }
+        <h4 class="wj-title">${step.title}</h4>
+        <div class="wj-instruction">${step.instruction}</div>
+        <div class="wj-footer">
+          <button class="wj-button wj-button-secondary" id="wj-back-btn" ${currentIdx === 0 ? "disabled style='opacity:0.4;'" : ""}>&larr; Back</button>
+          <div style="display: flex; gap: 6px;">
+            ${
+              step.allowSkip
+                ? '<button class="wj-button wj-button-secondary" id="wj-skip-btn">Skip</button>'
+                : ""
+            }
+            <button class="wj-button" id="wj-step-continue-btn">
+              ${step.action === "manual" ? "Continue &rarr;" : "Got it"}
+            </button>
+          </div>
+        </div>
       `;
       this.tooltipEl.style.display = "block";
 
-      // Position tooltip below or above element
       let tooltipTop = rect.bottom + scrollY + 8;
-      const tooltipLeft = Math.max(16, Math.min(rect.left + scrollX, window.innerWidth - 300));
+      const tooltipLeft = Math.max(16, Math.min(rect.left + scrollX, window.innerWidth - 340));
 
-      if (rect.bottom + 150 > window.innerHeight && rect.top > 150) {
-        // Place above target if bottom exceeds viewport
-        tooltipTop = rect.top + scrollY - 140;
+      if (rect.bottom + 180 > window.innerHeight && rect.top > 180) {
+        tooltipTop = rect.top + scrollY - 170;
       }
 
       this.tooltipEl.style.top = `${tooltipTop}px`;
       this.tooltipEl.style.left = `${tooltipLeft}px`;
 
-      const continueBtn = this.tooltipEl.querySelector("#wj-step-continue-btn");
-      if (continueBtn) {
-        continueBtn.addEventListener("click", () => {
-          chrome.runtime.sendMessage({ type: "STEP_CONTINUED" });
-          this.clearHighlight();
-        });
-      }
-    } else {
-      this.tooltipEl.style.display = "none";
-    }
-  }
-
-  public highlightSelector(selector: string, options?: StepOverlayOptions) {
-    const el = document.querySelector(selector);
-    if (el) {
-      this.highlightElement(el, selector, options);
-    } else {
-      console.warn(`[WebJourney] Element not found for selector: ${selector}`);
+      this.tooltipEl.querySelector("#wj-back-btn")?.addEventListener("click", () => {
+        this.player.previousStep();
+      });
+      this.tooltipEl.querySelector("#wj-skip-btn")?.addEventListener("click", () => {
+        this.player.skipStep();
+      });
+      this.tooltipEl.querySelector("#wj-step-continue-btn")?.addEventListener("click", () => {
+        this.player.nextStep();
+      });
     }
   }
 
@@ -285,13 +395,74 @@ class WebJourneyOverlay {
     if (this.tooltipEl) this.tooltipEl.style.display = "none";
   }
 
+  private initMessageListener() {
+    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      switch (message.type) {
+        case "START_INSPECTOR":
+          this.startInspector();
+          sendResponse({ success: true });
+          break;
+
+        case "STOP_INSPECTOR":
+          this.stopInspector();
+          sendResponse({ success: true });
+          break;
+
+        case "HIGHLIGHT_TARGET":
+        case "TEST_HIGHLIGHT":
+          const el = document.querySelector(message.selector);
+          if (el) {
+            this.highlightStepTarget(
+              el,
+              message.step || {
+                id: "preview",
+                order: 0,
+                title: "Step Preview",
+                instruction: "Interactive preview of your step overlay.",
+                action: "click",
+                allowSkip: true
+              }
+            );
+          }
+          sendResponse({ success: true });
+          break;
+
+        case "CLEAR_HIGHLIGHT":
+          this.clearHighlight();
+          sendResponse({ success: true });
+          break;
+
+        case "PLAYER_START":
+          this.player.start(message.journey);
+          sendResponse({ success: true });
+          break;
+
+        case "PLAYER_PAUSE":
+          this.player.pause();
+          sendResponse({ success: true });
+          break;
+
+        case "PLAYER_RESUME":
+          this.player.resume();
+          sendResponse({ success: true });
+          break;
+
+        case "PLAYER_STOP":
+          this.player.stop();
+          sendResponse({ success: true });
+          break;
+      }
+      return true;
+    });
+  }
+
   private onMouseOver = (e: MouseEvent) => {
     if (!this.isInspecting) return;
     const target = e.target as HTMLElement;
     if (!target || target === this.host || this.host?.contains(target)) return;
 
-    const selector = this.generateSelector(target);
-    this.highlightElement(target, selector);
+    const selector = this.generateSimpleSelector(target);
+    this.repositionHighlightAndTooltip(target, selector);
   };
 
   private onClick = (e: MouseEvent) => {
@@ -302,7 +473,7 @@ class WebJourneyOverlay {
     e.preventDefault();
     e.stopPropagation();
 
-    const selector = this.generateSelector(target);
+    const selector = this.generateSimpleSelector(target);
     const candidatesCount = document.querySelectorAll(selector).length;
 
     chrome.runtime.sendMessage({
@@ -329,76 +500,21 @@ class WebJourneyOverlay {
     this.clearHighlight();
   }
 
-  public teardown() {
-    this.stopInspector();
-    if (this.host && this.host.parentNode) {
-      this.host.parentNode.removeChild(this.host);
-      this.host = null;
-      this.shadow = null;
-    }
-  }
-
-  private generateSelector(el: HTMLElement): string {
-    // 1. Prioritize data-testid if present
+  private generateSimpleSelector(el: HTMLElement): string {
     const testId = el.getAttribute("data-testid");
-    if (testId) {
-      const sel = `[data-testid="${testId}"]`;
-      if (document.querySelectorAll(sel).length === 1) return sel;
-    }
+    if (testId) return `[data-testid="${testId}"]`;
 
-    // 2. Prioritize unique ID
-    if (el.id && !el.id.match(/\d{4,}/)) {
-      const sel = `#${el.id}`;
-      if (document.querySelectorAll(sel).length === 1) return sel;
-    }
+    if (el.id && !el.id.match(/\d{4,}/)) return `#${el.id}`;
 
-    // 3. Name or aria-label
     const name = el.getAttribute("name");
-    if (name) {
-      const sel = `${el.tagName.toLowerCase()}[name="${name}"]`;
-      if (document.querySelectorAll(sel).length === 1) return sel;
-    }
+    if (name) return `${el.tagName.toLowerCase()}[name="${name}"]`;
 
     const ariaLabel = el.getAttribute("aria-label");
-    if (ariaLabel) {
-      const sel = `[aria-label="${ariaLabel}"]`;
-      if (document.querySelectorAll(sel).length === 1) return sel;
-    }
+    if (ariaLabel) return `[aria-label="${ariaLabel}"]`;
 
-    // 4. Tag + Class combination
-    const tag = el.tagName.toLowerCase();
-    if (typeof el.className === "string" && el.className.trim()) {
-      const classes = el.className.trim().split(/\s+/).slice(0, 2).join(".");
-      const sel = `${tag}.${classes}`;
-      if (document.querySelectorAll(sel).length === 1) return sel;
-    }
-
-    // 5. Hierarchy fallback
-    let current: HTMLElement | null = el;
-    const path: string[] = [];
-    while (current && current !== document.body && current !== document.documentElement) {
-      let segment = current.tagName.toLowerCase();
-      if (current.id && !current.id.match(/\d{4,}/)) {
-        segment += `#${current.id}`;
-        path.unshift(segment);
-        break;
-      }
-      const parent: HTMLElement | null = current.parentElement;
-      if (parent) {
-        const siblings = Array.from(parent.children).filter((c) => c.tagName === current?.tagName);
-        if (siblings.length > 1) {
-          const index = siblings.indexOf(current) + 1;
-          segment += `:nth-of-type(${index})`;
-        }
-      }
-      path.unshift(segment);
-      current = parent;
-    }
-
-    return path.join(" > ");
+    return el.tagName.toLowerCase();
   }
 }
 
-// Instantiate on loaded page
 new WebJourneyOverlay();
-console.log("[WebJourney] Resilient Content Script active with Shadow DOM isolation.");
+console.log("[WebJourney] Full Interactive Journey Player mounted inside Shadow DOM.");
