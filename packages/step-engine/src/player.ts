@@ -118,12 +118,6 @@ export class JourneyPlayer {
     const resolved = resolveTargetElement(fingerprint, document);
 
     if (resolved.element) {
-      if (resolved.ambiguityCount > 1) {
-        this.context = playerReducer(this.context, { type: "TARGET_AMBIGUOUS", count: resolved.ambiguityCount });
-        this.callbacks.onStateChange(this.context);
-        return;
-      }
-
       this.context = playerReducer(this.context, {
         type: "TARGET_RESOLVED",
         selector: resolved.matchedCandidate || fingerprint.selectorCandidates[0]
@@ -131,7 +125,7 @@ export class JourneyPlayer {
       this.callbacks.onHighlightTarget(resolved.element, currentStep);
       this.callbacks.onStateChange(this.context);
 
-      // Attach observer
+      // Attach observer to the resolved element
       this.attachObserver(resolved.element, currentStep);
     } else {
       // Retry resolution briefly before blocking (for dynamic elements)

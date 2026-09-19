@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "id": "11111111-2222-3333-4444-555555555555",
+  "name": "Codevioso Website Onboarding Tour",
+  "description": "Interactive guided tour of Codevioso web services, digital products, and contact channels.",
+  "allowedOrigins": [
+    "https://codevioso.com"
+  ],
+  "startUrl": "https://codevioso.com/",
+  "createdAt": "2026-09-19T12:00:00.000Z",
+  "updatedAt": "2026-09-19T12:00:00.000Z",
+  "steps": [
+    {
+      "id": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
+      "order": 0,
+      "title": "Welcome to Codevioso",
+      "instruction": "Welcome! Codevioso designs and delivers modern bespoke software and web solutions. Let's explore the platform navigation.",
+      "action": "click",
+      "target": {
+        "selectorCandidates": [
+          "#cv-nav a.cv-nav__logo",
+          "#cv-nav .cv-nav__logo",
+          "header a.cv-nav__logo"
+        ],
+        "tagName": "a",
+        "textContentSnippet": "Codevioso"
+      },
+      "timeoutMs": 30000,
+      "allowSkip": true
+    },
+    {
+      "id": "b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e",
+      "order": 1,
+      "title": "Discover Tailored Services",
+      "instruction": "Click on 'Services' to review full-stack web engineering, API integrations, and cloud architectures.",
+      "action": "click",
+      "target": {
+        "selectorCandidates": [
+          "#cv-navlinks a[href*='services']",
+          "#cv-navlinks li:nth-of-type(1) a",
+          "nav a[href*='services']"
+        ],
+        "tagName": "a",
+        "textContentSnippet": "Services"
+      },
+      "timeoutMs": 30000,
+      "allowSkip": true
+    },
+    {
+      "id": "c3d4e5f6-a7b8-9c0d-1e2f-3a4b5c6d7e8f",
+      "order": 2,
+      "title": "Explore Products & Solutions",
+      "instruction": "Check out Codevioso's proprietary software products and digital accelerators.",
+      "action": "click",
+      "target": {
+        "selectorCandidates": [
+          "#cv-navlinks a[href*='products']",
+          "#cv-navlinks li:nth-of-type(2) a",
+          "nav a[href*='products']"
+        ],
+        "tagName": "a",
+        "textContentSnippet": "Products"
+      },
+      "timeoutMs": 30000,
+      "allowSkip": true
+    },
+    {
+      "id": "d4e5f6a7-b8c9-0d1e-2f3a-4b5c6d7e8f9a",
+      "order": 3,
+      "title": "Connect & Start a Project",
+      "instruction": "Reach out directly to start your project or schedule a technical consultation.",
+      "action": "click",
+      "target": {
+        "selectorCandidates": [
+          "#cv-nav a[href*='contact']",
+          "#cv-navlinks a[href*='contact']",
+          "a[href*='contact']"
+        ],
+        "tagName": "a",
+        "textContentSnippet": "Contact"
+      },
+      "timeoutMs": 30000,
+      "allowSkip": true
+    }
+  ]
+}
