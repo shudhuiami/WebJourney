@@ -173,11 +173,12 @@ class WebJourneyOverlay {
           sendResponse({ success: true });
           break;
 
+        case "HIGHLIGHT_TARGET":
         case "TEST_HIGHLIGHT":
           this.highlightSelector(message.selector, {
-            title: "Selected Target",
-            instruction: "Target successfully highlighted with Shadow DOM isolation.",
-            actionType: "click",
+            title: message.step?.title || "Selected Target",
+            instruction: message.step?.instruction || "Target successfully highlighted with Shadow DOM isolation.",
+            actionType: message.step?.action || "click",
             showContinue: true
           });
           sendResponse({ success: true });

@@ -32,11 +32,11 @@ flowchart LR
 ## Phase 1 — Foundation & Core Infrastructure
 *Goal: Set up MV3 extension shell, typed messaging bus, and shared schema contracts.*
 
-- [ ] **WJ-101**: Setup MV3 extension structure (`apps/extension`): manifest v3, popup, side panel, background service worker, and content-script lifecycle.
-- [ ] **WJ-102**: Build typed, validated extension message bus (`content <-> background <-> sidepanel/popup`) resilient to service worker suspension.
-- [ ] **WJ-103**: Implement and validate Journey Schema (`packages/journey-schema`) using TypeScript + Zod (definitions, actions, target fingerprints, validation).
-- [ ] **WJ-104**: Setup unified build, linting (ESLint), formatting (Prettier), and testing (Vitest).
-- [ ] **WJ-105**: Draft initial backend schema & API boundary contracts for later persistence.
+- [x] **WJ-101**: Setup MV3 extension structure (`apps/extension`): manifest v3, popup, side panel, background service worker, and content-script lifecycle.
+- [x] **WJ-102**: Build typed, validated extension message bus (`content <-> background <-> sidepanel/popup`) resilient to service worker suspension.
+- [x] **WJ-103**: Implement and validate Journey Schema (`packages/journey-schema`) using TypeScript + Zod (definitions, actions, target fingerprints, validation).
+- [x] **WJ-104**: Setup unified build, linting (ESLint), formatting (Prettier), and testing (Vitest).
+- [x] **WJ-105**: Draft initial backend schema & API boundary contracts for later persistence.
 
 ---
 
