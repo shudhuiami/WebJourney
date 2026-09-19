@@ -39,9 +39,9 @@ const CODEVIOSO_SAMPLE_JOURNEY: Journey = {
       action: "click",
       target: {
         selectorCandidates: [
+          "header > div:nth-of-type(1) > a",
           "#cv-nav a.cv-nav__logo",
-          "#cv-nav .cv-nav__logo",
-          "header a.cv-nav__logo"
+          "header a[href*='codevioso.com']"
         ],
         tagName: "a",
         textContentSnippet: "Codevioso"
@@ -57,9 +57,9 @@ const CODEVIOSO_SAMPLE_JOURNEY: Journey = {
       action: "click",
       target: {
         selectorCandidates: [
-          "#cv-navlinks a[href*='services']",
-          "#cv-navlinks li:nth-of-type(1) a",
-          "nav a[href*='services']"
+          "header > div:nth-of-type(1) > nav > ul > li:nth-of-type(2) > a",
+          "nav a[href*='services']",
+          "a[href*='/services']"
         ],
         tagName: "a",
         textContentSnippet: "Services"
@@ -75,9 +75,9 @@ const CODEVIOSO_SAMPLE_JOURNEY: Journey = {
       action: "click",
       target: {
         selectorCandidates: [
-          "#cv-navlinks a[href*='products']",
-          "#cv-navlinks li:nth-of-type(2) a",
-          "nav a[href*='products']"
+          "header > div:nth-of-type(1) > nav > ul > li:nth-of-type(3) > a",
+          "nav a[href*='products']",
+          "a[href*='/products']"
         ],
         tagName: "a",
         textContentSnippet: "Products"
@@ -93,8 +93,8 @@ const CODEVIOSO_SAMPLE_JOURNEY: Journey = {
       action: "click",
       target: {
         selectorCandidates: [
-          "#cv-nav a[href*='contact']",
-          "#cv-navlinks a[href*='contact']",
+          "header > div:nth-of-type(1) > div > div > a",
+          "header a[href*='contact']",
           "a[href*='contact']"
         ],
         tagName: "a",
