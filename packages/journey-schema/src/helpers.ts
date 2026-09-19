@@ -14,6 +14,7 @@ export function createEmptyJourney(name = "New Guided Journey", startUrl = "http
     id: crypto.randomUUID(),
     name,
     description: "",
+    themeColor: "indigo",
     allowedOrigins: [origin],
     startUrl,
     steps: [],

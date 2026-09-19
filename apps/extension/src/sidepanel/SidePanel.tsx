@@ -5,6 +5,7 @@ import {
   validateJourney,
   createPublishedVersion,
   createInvitationRecord,
+  JOURNEY_THEMES,
   type Journey,
   type StepDefinition,
   type StepActionType,
@@ -29,6 +30,7 @@ const CODEVIOSO_SAMPLE_JOURNEY: Journey = {
   id: "11111111-2222-3333-4444-555555555555",
   name: "Codevioso Website Onboarding Tour",
   description: "Interactive guided tour of Codevioso web services, digital products, and contact channels.",
+  themeColor: "emerald",
   allowedOrigins: ["https://codevioso.com"],
   startUrl: "https://codevioso.com/",
   createdAt: "2026-09-19T12:00:00.000Z",
@@ -676,6 +678,60 @@ export function SidePanel() {
               >
                 ⚡ Load codevioso.com Tour
               </button>
+            </div>
+
+            {/* Tour Theme & Palette Bar */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "8px 12px",
+                background: "#ffffff",
+                borderRadius: "8px",
+                border: "1px solid #e2e8f0",
+                marginBottom: "12px",
+                fontSize: "11px"
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ color: "#475569", fontWeight: 700 }}>🎨 Brand Theme:</span>
+                <span style={{ color: "#64748b", fontSize: "10px" }}>
+                  {JOURNEY_THEMES[(currentJourney.themeColor || "indigo") as keyof typeof JOURNEY_THEMES]?.name || "Custom"}
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                {Object.entries(JOURNEY_THEMES).map(([key, theme]) => {
+                  const isSelected = (currentJourney.themeColor || "indigo") === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      title={theme.name}
+                      onClick={() => {
+                        saveJourney({
+                          ...currentJourney,
+                          themeColor: key,
+                          updatedAt: new Date().toISOString()
+                        });
+                        setStatusMessage({ text: `Switched theme to ${theme.name}!`, type: "success" });
+                      }}
+                      style={{
+                        width: "18px",
+                        height: "18px",
+                        borderRadius: "50%",
+                        background: theme.gradient,
+                        border: isSelected ? "2px solid #0f172a" : "1px solid rgba(0,0,0,0.15)",
+                        boxShadow: isSelected ? "0 0 0 2px #93c5fd" : "none",
+                        cursor: "pointer",
+                        padding: 0,
+                        transform: isSelected ? "scale(1.2)" : "scale(1)",
+                        transition: "all 0.15s ease"
+                      }}
+                    />
+                  );
+                })}
+              </div>
             </div>
 
             {/* Step 1: Big Action Picker Bar */}

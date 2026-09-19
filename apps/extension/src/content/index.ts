@@ -1,13 +1,24 @@
-// WebJourney Content Script with Shadow DOM Isolation & Interactive Journey Player
 import {
   JourneyPlayer,
   generateUniqueSelector,
   generateElementBreadcrumb,
   type PlayerContext
 } from "@webjourney/step-engine";
-import type { Journey, StepDefinition } from "@webjourney/journey-schema";
+import type {
+  Journey,
+  StepDefinition,
+  JourneyThemeKey
+} from "@webjourney/journey-schema";
 
 const RUN_STORAGE_KEY = "webjourney_active_run";
+
+const THEME_PALETTES: Record<string, { primary: string; gradient: string; accent: string; lightBg: string; text: string }> = {
+  indigo: { primary: "#4f46e5", gradient: "linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)", accent: "#4f46e5", lightBg: "#eef2ff", text: "#4338ca" },
+  emerald: { primary: "#059669", gradient: "linear-gradient(135deg, #059669 0%, #10b981 100%)", accent: "#059669", lightBg: "#ecfdf5", text: "#047857" },
+  violet: { primary: "#7c3aed", gradient: "linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)", accent: "#7c3aed", lightBg: "#f5f3ff", text: "#6d28d9" },
+  amber: { primary: "#d97706", gradient: "linear-gradient(135deg, #d97706 0%, #f59e0b 100%)", accent: "#d97706", lightBg: "#fffbeb", text: "#b45309" },
+  rose: { primary: "#e11d48", gradient: "linear-gradient(135deg, #e11d48 0%, #f43f5e 100%)", accent: "#e11d48", lightBg: "#fff1f2", text: "#be123c" }
+};
 
 function escapeHtml(str: string): string {
   const div = document.createElement("div");
@@ -32,6 +43,8 @@ class WebJourneyOverlay {
   private currentStep: StepDefinition | null = null;
   private isInspecting: boolean = false;
   private rafId: number | null = null;
+  private confettiCanvas: HTMLCanvasElement | null = null;
+  private confettiAnimationId: number | null = null;
   private player: JourneyPlayer;
 
   constructor() {
@@ -135,7 +148,7 @@ class WebJourneyOverlay {
         line-height: 1.5;
         z-index: 2147483647;
         box-sizing: border-box;
-        overflow: hidden;
+        overflow: visible;
         animation: wjFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
       }
       @keyframes wjFadeIn {
@@ -146,6 +159,51 @@ class WebJourneyOverlay {
         height: 4px;
         background: linear-gradient(90deg, #4f46e5 0%, #06b6d4 100%);
         width: 100%;
+        border-radius: 14px 14px 0 0;
+      }
+      .wj-tooltip-arrow {
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        background: #ffffff;
+        transform: rotate(45deg);
+        pointer-events: none;
+        z-index: 2;
+        transition: all 0.15s ease;
+      }
+      .wj-tooltip-arrow-bottom {
+        top: -6px;
+        background: #4f46e5;
+        border-top-left-radius: 2px;
+      }
+      .wj-tooltip-arrow-top {
+        bottom: -6px;
+        background: #ffffff;
+        border-right: 1px solid rgba(226, 232, 240, 0.9);
+        border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+        box-shadow: 2px 2px 4px rgba(15, 23, 42, 0.06);
+      }
+      .wj-tooltip-arrow-right {
+        left: -6px;
+        background: #ffffff;
+        border-left: 1px solid rgba(226, 232, 240, 0.9);
+        border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+        box-shadow: -2px 2px 4px rgba(15, 23, 42, 0.06);
+      }
+      .wj-tooltip-arrow-left {
+        right: -6px;
+        background: #ffffff;
+        border-right: 1px solid rgba(226, 232, 240, 0.9);
+        border-top: 1px solid rgba(226, 232, 240, 0.9);
+        box-shadow: 2px -2px 4px rgba(15, 23, 42, 0.06);
+      }
+      .wj-confetti-canvas {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        pointer-events: none;
+        z-index: 2147483646;
       }
       .wj-card-inner {
         padding: 16px;
@@ -514,6 +572,7 @@ class WebJourneyOverlay {
     this.tooltipEl.style.transform = "translate(-50%, -50%)";
 
     const exitHandler = () => {
+      this.stopConfetti();
       this.player.stop();
       this.clearHighlight();
     };
@@ -528,7 +587,119 @@ class WebJourneyOverlay {
     this.tooltipEl.querySelector("#wj-blocked-close-btn")?.addEventListener("click", exitHandler);
   }
 
-  private renderCompletionCard(journey: Journey) {
+  private getJourneyTheme(journey?: Journey | null) {
+    const key = (journey?.themeColor || "indigo") as JourneyThemeKey;
+    return THEME_PALETTES[key] || THEME_PALETTES.indigo;
+  }
+
+  private fireConfetti() {
+    this.stopConfetti();
+    if (!this.shadow) return;
+
+    this.confettiCanvas = document.createElement("canvas");
+    this.confettiCanvas.className = "wj-confetti-canvas";
+    this.confettiCanvas.width = window.innerWidth;
+    this.confettiCanvas.height = window.innerHeight;
+    this.shadow.appendChild(this.confettiCanvas);
+
+    const ctx = this.confettiCanvas.getContext("2d");
+    if (!ctx) return;
+
+    const theme = this.getJourneyTheme(this.player.getContext().journey);
+    const colors = [
+      theme.primary,
+      "#3b82f6",
+      "#10b981",
+      "#f59e0b",
+      "#ec4899",
+      "#8b5cf6",
+      "#06b6d4"
+    ];
+
+    const particleCount = 75;
+    const particles: Array<{
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      color: string;
+      vx: number;
+      vy: number;
+      rotation: number;
+      vRot: number;
+      opacity: number;
+    }> = [];
+
+    const originX = window.innerWidth / 2;
+    const originY = window.innerHeight / 2 - 30;
+
+    for (let i = 0; i < particleCount; i++) {
+      const angle = (Math.PI * 2 * i) / particleCount + (Math.random() - 0.5) * 0.5;
+      const speed = Math.random() * 9 + 4;
+      particles.push({
+        x: originX,
+        y: originY,
+        w: Math.random() * 8 + 6,
+        h: Math.random() * 6 + 4,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 3 - Math.random() * 4,
+        rotation: Math.random() * 360,
+        vRot: (Math.random() - 0.5) * 14,
+        opacity: 1
+      });
+    }
+
+    const startTime = performance.now();
+    const duration = 3400;
+
+    const animate = (now: number) => {
+      const elapsed = now - startTime;
+      if (elapsed > duration || !this.confettiCanvas) {
+        this.stopConfetti();
+        return;
+      }
+
+      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+      for (const p of particles) {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.24; // gravity
+        p.vx *= 0.985; // air drag
+        p.rotation += p.vRot;
+
+        if (elapsed > duration - 800) {
+          p.opacity = Math.max(0, (duration - elapsed) / 800);
+        }
+
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate((p.rotation * Math.PI) / 180);
+        ctx.globalAlpha = p.opacity;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        ctx.restore();
+      }
+
+      this.confettiAnimationId = requestAnimationFrame(animate);
+    };
+
+    this.confettiAnimationId = requestAnimationFrame(animate);
+  }
+
+  private stopConfetti() {
+    if (this.confettiAnimationId) {
+      cancelAnimationFrame(this.confettiAnimationId);
+      this.confettiAnimationId = null;
+    }
+    if (this.confettiCanvas) {
+      this.confettiCanvas.remove();
+      this.confettiCanvas = null;
+    }
+  }
+
+  public renderCompletionCard(journey: Journey) {
     if (!this.tooltipEl) return;
 
     this.showBackdrop();
@@ -538,11 +709,15 @@ class WebJourneyOverlay {
       this.highlightBox.style.display = "none";
     }
 
+    const theme = this.getJourneyTheme(journey);
+    this.tooltipEl.querySelector(".wj-tooltip-arrow")?.remove();
+    this.fireConfetti();
+
     this.tooltipEl.innerHTML = `
-      <div class="wj-card-accent-bar" style="background: linear-gradient(90deg, #10b981 0%, #059669 100%);"></div>
+      <div class="wj-card-accent-bar" style="background: ${theme.gradient};"></div>
       <div class="wj-card-inner">
         <div class="wj-tooltip-header">
-          <span class="wj-badge" style="background: #dcfce7; color: #15803d;">Walkthrough Finished</span>
+          <span class="wj-badge" style="background: ${theme.lightBg}; color: ${theme.text}; border: 1px solid ${theme.primary}30;">Walkthrough Finished</span>
           <button id="wj-finish-close-btn" class="wj-close-btn" title="Close">&times;</button>
         </div>
         <h4 class="wj-title" style="margin-top: 6px;">🎉 You Did It!</h4>
@@ -550,7 +725,7 @@ class WebJourneyOverlay {
           You have successfully completed <strong>${escapeHtml(journey.name)}</strong> (${journey.steps.length} steps).
         </div>
         <div class="wj-footer" style="justify-content: flex-end;">
-          <button class="wj-button" id="wj-finish-btn" style="background: #10b981;">Complete & Close</button>
+          <button class="wj-button" id="wj-finish-btn" style="background: ${theme.gradient};">Complete & Close</button>
         </div>
       </div>
     `;
@@ -562,6 +737,7 @@ class WebJourneyOverlay {
     this.tooltipEl.style.transform = "translate(-50%, -50%)";
 
     const closeHandler = () => {
+      this.stopConfetti();
       this.player.stop();
       this.clearHighlight();
     };
@@ -657,13 +833,16 @@ class WebJourneyOverlay {
       const totalSteps = this.player.getContext().journey?.steps.length || 1;
       const pct = Math.round(((currentIdx + 1) / totalSteps) * 100);
       const actionStyle = ACTION_COLOR_STYLES[step.action] || ACTION_COLOR_STYLES.click;
+      const theme = this.getJourneyTheme(this.player.getContext().journey);
 
       this.tooltipEl.innerHTML = `
-        <div class="wj-card-accent-bar"></div>
+        <div class="wj-card-accent-bar" style="background: ${theme.gradient};"></div>
         <div class="wj-card-inner">
           <div class="wj-tooltip-header">
             <div style="display: flex; align-items: center; gap: 8px;">
-              <span class="wj-step-counter">Step ${currentIdx + 1} of ${totalSteps}</span>
+              <span class="wj-step-counter" style="color: ${theme.accent}; background: ${theme.lightBg}; border-color: ${theme.primary}40;">
+                Step ${currentIdx + 1} of ${totalSteps}
+              </span>
               <span class="wj-badge" style="background: ${actionStyle.bg}; color: ${actionStyle.text};">
                 ${actionStyle.icon} ${escapeHtml(step.action)}
               </span>
@@ -671,7 +850,7 @@ class WebJourneyOverlay {
             <button id="wj-exit-tour-btn" class="wj-close-btn" title="Exit Tour">&times;</button>
           </div>
           <div class="wj-progress-track">
-            <div class="wj-progress-fill" style="width: ${pct}%;"></div>
+            <div class="wj-progress-fill" style="width: ${pct}%; background: ${theme.gradient};"></div>
           </div>
           <h4 class="wj-title">${escapeHtml(step.title)}</h4>
           <div class="wj-instruction">${escapeHtml(step.instruction)}</div>
@@ -697,8 +876,9 @@ class WebJourneyOverlay {
                     : btn.variant === "success"
                     ? "wj-button-success"
                     : "wj-button-secondary";
+                const customStyle = btn.variant === "primary" ? `style="background: ${theme.gradient};"` : "";
                 const icon = btn.action === "url" ? "↗ " : btn.action === "exit" ? "✕ " : "";
-                return `<button class="wj-button ${variantClass} wj-custom-btn" data-btn-idx="${bIdx}" data-action="${escapeHtml(
+                return `<button class="wj-button ${variantClass} wj-custom-btn" ${customStyle} data-btn-idx="${bIdx}" data-action="${escapeHtml(
                   btn.action
                 )}" data-url="${escapeHtml(btn.url || "")}">
                   ${icon}${escapeHtml(btn.label)}
@@ -715,7 +895,7 @@ class WebJourneyOverlay {
                 <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end;">
                   ${customButtonsHtml}
                   ${showDefaultSkip ? `<button class="wj-button wj-button-secondary" id="wj-skip-btn">Skip</button>` : ""}
-                  ${showDefaultNext ? `<button class="wj-button wj-button-primary" id="wj-step-continue-btn">${step.action === "manual" ? "Continue &rarr;" : "Next &rarr;"}</button>` : ""}
+                  ${showDefaultNext ? `<button class="wj-button wj-button-primary" id="wj-step-continue-btn" style="background: ${theme.gradient};">${step.action === "manual" ? "Continue &rarr;" : "Next &rarr;"}</button>` : ""}
                 </div>
               </div>
             `;
@@ -731,20 +911,25 @@ class WebJourneyOverlay {
 
       let top = rect.bottom + margin;
       let left = Math.max(margin, Math.min(rect.left, window.innerWidth - cardWidth - margin));
+      let placement: "bottom" | "top" | "right" | "left" = "bottom";
 
       if (top + cardHeight > window.innerHeight - margin) {
         const topAbove = rect.top - cardHeight - margin;
         if (topAbove >= margin) {
           top = topAbove;
+          placement = "top";
         } else {
           if (rect.right + cardWidth + margin <= window.innerWidth) {
             left = rect.right + margin;
             top = Math.max(margin, Math.min(rect.top, window.innerHeight - cardHeight - margin));
+            placement = "right";
           } else if (rect.left - cardWidth - margin >= margin) {
             left = rect.left - cardWidth - margin;
             top = Math.max(margin, Math.min(rect.top, window.innerHeight - cardHeight - margin));
+            placement = "left";
           } else {
             top = Math.max(margin, window.innerHeight - cardHeight - margin);
+            placement = "bottom";
           }
         }
       }
@@ -757,6 +942,34 @@ class WebJourneyOverlay {
       this.tooltipEl.style.top = `${top}px`;
       this.tooltipEl.style.left = `${left}px`;
       this.tooltipEl.style.transform = "none";
+
+      // Adaptive Dynamic Tooltip Pointer Arrow
+      let arrowEl = this.tooltipEl.querySelector<HTMLDivElement>(".wj-tooltip-arrow");
+      if (!arrowEl) {
+        arrowEl = document.createElement("div");
+        arrowEl.className = "wj-tooltip-arrow";
+        this.tooltipEl.appendChild(arrowEl);
+      }
+
+      arrowEl.className = `wj-tooltip-arrow wj-tooltip-arrow-${placement}`;
+
+      if (placement === "bottom" || placement === "top") {
+        const targetCenterX = rect.left + rect.width / 2;
+        const arrowX = Math.max(20, Math.min(cardWidth - 32, targetCenterX - left - 6));
+        arrowEl.style.left = `${arrowX}px`;
+        arrowEl.style.top = placement === "bottom" ? "-6px" : "";
+        arrowEl.style.bottom = placement === "top" ? "-6px" : "";
+        arrowEl.style.right = "";
+        arrowEl.style.background = placement === "bottom" ? theme.accent : "#ffffff";
+      } else {
+        const targetCenterY = rect.top + rect.height / 2;
+        const arrowY = Math.max(20, Math.min(cardHeight - 32, targetCenterY - top - 6));
+        arrowEl.style.top = `${arrowY}px`;
+        arrowEl.style.left = placement === "right" ? "-6px" : "";
+        arrowEl.style.right = placement === "left" ? "-6px" : "";
+        arrowEl.style.bottom = "";
+        arrowEl.style.background = "#ffffff";
+      }
 
       this.tooltipEl.querySelector("#wj-back-btn")?.addEventListener("click", () => {
         this.player.previousStep();
@@ -803,7 +1016,11 @@ class WebJourneyOverlay {
     this.activeTargetEl = null;
     this.currentStep = null;
     if (this.highlightBox) this.highlightBox.style.display = "none";
-    if (this.tooltipEl) this.tooltipEl.style.display = "none";
+    if (this.tooltipEl) {
+      this.tooltipEl.style.display = "none";
+      this.tooltipEl.querySelector(".wj-tooltip-arrow")?.remove();
+    }
+    this.stopConfetti();
     this.hideBackdrop();
   }
 
@@ -928,6 +1145,10 @@ window.addEventListener("message", (event) => {
     const el = document.querySelector(event.data.selector);
     if (el) {
       overlay.highlightStepTarget(el, event.data.step);
+    }
+  } else if (event.data?.type === "WJ_TEST_COMPLETION") {
+    if (event.data.journey) {
+      overlay.renderCompletionCard(event.data.journey);
     }
   } else if (event.data?.type === "WJ_TEST_STOP") {
     overlay.clearHighlight();
