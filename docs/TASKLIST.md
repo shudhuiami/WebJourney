@@ -22,10 +22,10 @@ flowchart LR
 ## Phase 0 — Technical Feasibility & Architecture Decisions
 *Goal: Prove permissions, isolated DOM injection, target selection and SPA lifecycle on a controlled demo app.*
 
-- [ ] **WJ-001**: Document supported Chrome versions, permissions UX, iframe/shadow-DOM boundaries and non-goals.
-- [ ] **WJ-002**: Prototype origin-scoped content-script injection, isolated highlight overlay (Shadow DOM) and safe teardown.
-- [ ] **WJ-003**: Record ADRs for frontend stack (React + Vite + TypeScript), state model and backend strategy.
-- [ ] **WJ-004**: Build controlled multi-page demo application (`apps/demo-site`) covering clicks, inputs, dynamic re-rendering, and SPA routes.
+- [x] **WJ-001**: Document supported Chrome versions, permissions UX, iframe/shadow-DOM boundaries and non-goals.
+- [x] **WJ-002**: Prototype origin-scoped content-script injection, isolated highlight overlay (Shadow DOM) and safe teardown.
+- [x] **WJ-003**: Record ADRs for frontend stack (React + Vite + TypeScript), state model and backend strategy.
+- [x] **WJ-004**: Build controlled multi-page demo application (`apps/demo-site`) covering clicks, inputs, dynamic re-rendering, and SPA routes.
 
 ---
 
