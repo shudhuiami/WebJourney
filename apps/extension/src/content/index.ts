@@ -4,6 +4,12 @@ import type { Journey, StepDefinition } from "@webjourney/journey-schema";
 
 const RUN_STORAGE_KEY = "webjourney_active_run";
 
+function escapeHtml(str: string): string {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 class WebJourneyOverlay {
   private host: HTMLElement | null = null;
   private shadow: ShadowRoot | null = null;
@@ -249,12 +255,12 @@ class WebJourneyOverlay {
         <span class="wj-step-counter">Step ${context.currentStepIndex + 1} of ${context.journey?.steps.length}</span>
         <span class="wj-badge" style="background: #fee2e2; color: #b91c1c;">Target Issue</span>
       </div>
-      <h4 class="wj-title">${currentStep?.title || "Target Not Found"}</h4>
+      <h4 class="wj-title">${escapeHtml(currentStep?.title || "Target Not Found")}</h4>
       <div class="wj-error-box">
-        ${context.errorMessage || "Unable to locate the required element on this page."}
+        ${escapeHtml(context.errorMessage || "Unable to locate the required element on this page.")}
       </div>
       <div class="wj-instruction">
-        ${currentStep?.fallbackInstruction || "You can retry locating the element or skip this step to proceed."}
+        ${escapeHtml(currentStep?.fallbackInstruction || "You can retry locating the element or skip this step to proceed.")}
       </div>
       <div class="wj-footer">
         <button class="wj-button wj-button-secondary" id="wj-retry-btn">&#x21bb; Retry</button>
@@ -293,7 +299,7 @@ class WebJourneyOverlay {
       </div>
       <h4 class="wj-title">🎉 Walkthrough Complete!</h4>
       <div class="wj-instruction">
-        You have successfully completed <strong>${journey.name}</strong> (${journey.steps.length} steps).
+        You have successfully completed <strong>${escapeHtml(journey.name)}</strong> (${journey.steps.length} steps).
       </div>
       <div class="wj-footer" style="justify-content: flex-end;">
         <button class="wj-button" id="wj-finish-btn">Finish & Close</button>
@@ -347,10 +353,10 @@ class WebJourneyOverlay {
       this.tooltipEl.innerHTML = `
         <div class="wj-tooltip-header">
           <span class="wj-step-counter">Step ${currentIdx + 1} of ${totalSteps}</span>
-          <span class="wj-badge">${step.action}</span>
+          <span class="wj-badge">${escapeHtml(step.action)}</span>
         </div>
-        <h4 class="wj-title">${step.title}</h4>
-        <div class="wj-instruction">${step.instruction}</div>
+        <h4 class="wj-title">${escapeHtml(step.title)}</h4>
+        <div class="wj-instruction">${escapeHtml(step.instruction)}</div>
         <div class="wj-footer">
           <button class="wj-button wj-button-secondary" id="wj-back-btn" ${currentIdx === 0 ? "disabled style='opacity:0.4;'" : ""}>&larr; Back</button>
           <div style="display: flex; gap: 6px;">

@@ -13,7 +13,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "dev:demo": "npm run dev --workspace=@webjourney/demo-site",
     "dev:ext": "npm run dev --workspace=@webjourney/extension",
-    "build:ext": "npm run build --workspace=@webjourney/extension"
+    "build:ext": "npm run build --workspace=@webjourney/extension",
+    "package:ext": "npm run build:ext && powershell -Command \"New-Item -ItemType Directory -Force -Path release; Compress-Archive -Path apps/extension/dist/* -DestinationPath release/webjourney-v0.1.0.zip -Force\""
   },
   "devDependencies": {
     "happy-dom": "^20.14.5",

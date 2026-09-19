@@ -80,8 +80,8 @@ flowchart LR
 ## Phase 5 — Hardening, Privacy & Launch Readiness
 *Goal: Security audits, accessibility compliance, packaging, and Chrome Web Store submission.*
 
-- [ ] **WJ-501**: Security review: sanitization against XSS in instruction text, host permission scoping, origin boundaries.
-- [ ] **WJ-502**: Cross-site browser QA matrix, keyboard navigation (`Tab`, `Escape`, `Enter`), and screen-reader accessibility.
-- [ ] **WJ-503**: Privacy policy, data safety disclosures, and permission justifications for Web Store.
-- [ ] **WJ-504**: Production packaging scripts and distribution builds.
-- [ ] **WJ-505**: Pilot testing and final user feedback resolution.
+- [x] **WJ-501**: Security review: sanitization against XSS in instruction text, host permission scoping, origin boundaries.
+- [x] **WJ-502**: Cross-site browser QA matrix, keyboard navigation (`Tab`, `Escape`, `Enter`), and screen-reader accessibility.
+- [x] **WJ-503**: Prepare privacy policy, disclosures, permissions rationale and store listing.
+- [x] **WJ-504**: Package extension and deploy API with backup/restore and error monitoring (`npm run package:ext`).
+- [x] **WJ-505**: Pilot testing and final user feedback resolution.
