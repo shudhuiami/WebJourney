@@ -5,10 +5,11 @@ import {
   listenToRouteChanges,
   type PlayerContext
 } from "@webjourney/step-engine";
-import type {
-  Journey,
-  StepDefinition,
-  JourneyThemeKey
+import {
+  type Journey,
+  type StepDefinition,
+  type JourneyThemeKey,
+  type AnalyticsEvent
 } from "@webjourney/journey-schema";
 
 const RUN_STORAGE_KEY = "webjourney_active_run";
@@ -67,6 +68,10 @@ class WebJourneyOverlay {
   private confettiCanvas: HTMLCanvasElement | null = null;
   private confettiAnimationId: number | null = null;
   private player: JourneyPlayer;
+  private currentTrackedStepIndex: number = -1;
+  private stepStartTime: number = Date.now();
+  private journeyStartTime: number = Date.now();
+  private activeTrackingJourneyId: string | null = null;
 
   constructor() {
     this.initShadowHost();
@@ -838,11 +843,162 @@ class WebJourneyOverlay {
     }
   }
 
+  private recordAnalyticsEvent(event: Omit<AnalyticsEvent, "id">) {
+    const fullEvent: AnalyticsEvent = {
+      id:
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `ev-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      ...event
+    };
+
+    if (chrome.storage?.local) {
+      chrome.storage.local.get(["webjourney_analytics_events"], (res) => {
+        const list = Array.isArray(res.webjourney_analytics_events)
+          ? res.webjourney_analytics_events
+          : [];
+        list.push(fullEvent);
+        const trimmed = list.slice(-1000);
+        chrome.storage.local.set({ webjourney_analytics_events: trimmed });
+      });
+    }
+
+    try {
+      chrome.runtime.sendMessage({
+        type: "ANALYTICS_EVENT_RECORDED",
+        event: fullEvent
+      });
+    } catch {
+      // ignore
+    }
+  }
+
+  public handleTourExit() {
+    if (this.activeTrackingJourneyId && this.currentTrackedStepIndex >= 0) {
+      const ctx = this.player.getContext();
+      const curStep = ctx.journey?.steps[this.currentTrackedStepIndex];
+      this.recordAnalyticsEvent({
+        eventType: "step_exit",
+        journeyId: this.activeTrackingJourneyId,
+        journeyName: ctx.journey?.name || "Tour",
+        stepId: curStep?.id,
+        stepTitle: curStep?.title,
+        stepOrder: this.currentTrackedStepIndex,
+        durationMs: Math.max(0, Date.now() - this.stepStartTime),
+        timestamp: Date.now()
+      });
+      this.activeTrackingJourneyId = null;
+      this.currentTrackedStepIndex = -1;
+    }
+    this.stopConfetti();
+    this.player.stop();
+    this.clearHighlight();
+  }
+
+  public handleStepSkip() {
+    if (this.activeTrackingJourneyId && this.currentTrackedStepIndex >= 0) {
+      const ctx = this.player.getContext();
+      const curStep = ctx.journey?.steps[this.currentTrackedStepIndex];
+      this.recordAnalyticsEvent({
+        eventType: "step_skip",
+        journeyId: this.activeTrackingJourneyId,
+        journeyName: ctx.journey?.name || "Tour",
+        stepId: curStep?.id,
+        stepTitle: curStep?.title,
+        stepOrder: this.currentTrackedStepIndex,
+        durationMs: Math.max(0, Date.now() - this.stepStartTime),
+        timestamp: Date.now()
+      });
+    }
+    this.player.skipStep();
+  }
+
   private handlePlayerStateChange(context: PlayerContext) {
     if (context.state === "completed" || context.state === "idle") {
       this.clearActiveRun();
     } else {
       this.saveActiveRun(context);
+    }
+
+    // Telemetry tracking
+    if (context.journey) {
+      // 1. Journey Start
+      if (this.activeTrackingJourneyId !== context.journey.id) {
+        this.activeTrackingJourneyId = context.journey.id;
+        this.journeyStartTime = Date.now();
+        this.currentTrackedStepIndex = -1;
+
+        this.recordAnalyticsEvent({
+          eventType: "journey_start",
+          journeyId: context.journey.id,
+          journeyName: context.journey.name,
+          timestamp: Date.now()
+        });
+      }
+
+      // 2. Step View / Step Complete
+      if (context.currentStepIndex !== this.currentTrackedStepIndex && context.state !== "completed" && context.state !== "idle") {
+        if (this.currentTrackedStepIndex >= 0 && this.currentTrackedStepIndex < context.journey.steps.length) {
+          const prevStep = context.journey.steps[this.currentTrackedStepIndex];
+          const duration = Math.max(0, Date.now() - this.stepStartTime);
+          this.recordAnalyticsEvent({
+            eventType: "step_complete",
+            journeyId: context.journey.id,
+            journeyName: context.journey.name,
+            stepId: prevStep?.id,
+            stepTitle: prevStep?.title,
+            stepOrder: this.currentTrackedStepIndex,
+            durationMs: duration,
+            timestamp: Date.now()
+          });
+        }
+
+        this.currentTrackedStepIndex = context.currentStepIndex;
+        this.stepStartTime = Date.now();
+
+        const curStep = context.journey.steps[context.currentStepIndex];
+        if (curStep) {
+          this.recordAnalyticsEvent({
+            eventType: "step_view",
+            journeyId: context.journey.id,
+            journeyName: context.journey.name,
+            stepId: curStep.id,
+            stepTitle: curStep.title,
+            stepOrder: context.currentStepIndex,
+            timestamp: Date.now()
+          });
+        }
+      }
+
+      // 3. Journey Complete
+      if (context.state === "completed") {
+        if (this.currentTrackedStepIndex >= 0 && this.currentTrackedStepIndex < context.journey.steps.length) {
+          const finalStep = context.journey.steps[this.currentTrackedStepIndex];
+          const duration = Math.max(0, Date.now() - this.stepStartTime);
+          this.recordAnalyticsEvent({
+            eventType: "step_complete",
+            journeyId: context.journey.id,
+            journeyName: context.journey.name,
+            stepId: finalStep?.id,
+            stepTitle: finalStep?.title,
+            stepOrder: this.currentTrackedStepIndex,
+            durationMs: duration,
+            timestamp: Date.now()
+          });
+        }
+
+        const totalDuration = Math.max(0, Date.now() - this.journeyStartTime);
+        this.recordAnalyticsEvent({
+          eventType: "journey_complete",
+          journeyId: context.journey.id,
+          journeyName: context.journey.name,
+          durationMs: totalDuration,
+          timestamp: Date.now()
+        });
+
+        this.activeTrackingJourneyId = null;
+        this.currentTrackedStepIndex = -1;
+      }
     }
 
     if (context.state === "completed") {
@@ -959,8 +1115,7 @@ class WebJourneyOverlay {
 
     const exitHandler = () => {
       this.stopConfetti();
-      this.player.stop();
-      this.clearHighlight();
+      this.handleTourExit();
     };
 
     this.tooltipEl.querySelector("#wj-navigate-page-btn")?.addEventListener("click", () => {
@@ -972,7 +1127,7 @@ class WebJourneyOverlay {
       this.player.resume();
     });
     this.tooltipEl.querySelector("#wj-skip-btn")?.addEventListener("click", () => {
-      this.player.skipStep();
+      this.handleStepSkip();
     });
     this.tooltipEl.querySelector("#wj-exit-btn")?.addEventListener("click", exitHandler);
     this.tooltipEl.querySelector("#wj-blocked-close-btn")?.addEventListener("click", exitHandler);
@@ -1373,18 +1528,16 @@ class WebJourneyOverlay {
         this.player.previousStep();
       });
       this.tooltipEl.querySelector("#wj-skip-btn")?.addEventListener("click", () => {
-        this.player.skipStep();
+        this.handleStepSkip();
       });
       this.tooltipEl.querySelector("#wj-step-continue-btn")?.addEventListener("click", () => {
         this.player.nextStep();
       });
       this.tooltipEl.querySelector("#wj-card-exit-btn")?.addEventListener("click", () => {
-        this.player.stop();
-        this.clearHighlight();
+        this.handleTourExit();
       });
       this.tooltipEl.querySelector("#wj-exit-tour-btn")?.addEventListener("click", () => {
-        this.player.stop();
-        this.clearHighlight();
+        this.handleTourExit();
       });
 
       // Custom button click handlers
@@ -1398,10 +1551,9 @@ class WebJourneyOverlay {
           } else if (action === "back") {
             this.player.previousStep();
           } else if (action === "skip") {
-            this.player.skipStep();
+            this.handleStepSkip();
           } else if (action === "exit") {
-            this.player.stop();
-            this.clearHighlight();
+            this.handleTourExit();
           } else if (action === "url" && url) {
             window.open(url, "_blank");
           }

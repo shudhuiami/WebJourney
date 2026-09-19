@@ -6,13 +6,16 @@ import {
   createPublishedVersion,
   createInvitationRecord,
   JOURNEY_THEMES,
+  aggregateAnalyticsEvents,
   type Journey,
   type StepDefinition,
   type StepActionType,
   type StepButton,
   type StepButtonAction,
   type StepButtonVariant,
-  type StoredInvite
+  type StoredInvite,
+  type AnalyticsEvent,
+  type JourneyAnalyticsSummary
 } from "@webjourney/journey-schema";
 import { sendTabMessage } from "../messaging";
 
@@ -156,7 +159,7 @@ function WebJourneyLogoIcon({ size = 28 }: { size?: number }) {
 
 export function SidePanel() {
   const [activeTab, setActiveTab] = useState<{ id?: number; url?: string; title?: string }>({});
-  const [activeView, setActiveView] = useState<"builder" | "publish" | "widget">("builder");
+  const [activeView, setActiveView] = useState<"builder" | "publish" | "widget" | "analytics">("builder");
   const [isInspecting, setIsInspecting] = useState(false);
   const [currentJourney, setCurrentJourney] = useState<Journey>(() =>
     createEmptyJourney("My Guided Journey", "http://localhost:5173")
@@ -174,6 +177,8 @@ export function SidePanel() {
   const [launcherEnabled, setLauncherEnabled] = useState<boolean>(true);
   const [launcherPosition, setLauncherPosition] = useState<"bottom-right" | "bottom-left">("bottom-right");
   const [completedJourneys, setCompletedJourneys] = useState<string[]>([]);
+  const [analyticsEvents, setAnalyticsEvents] = useState<AnalyticsEvent[]>([]);
+  const [analyticsSummaries, setAnalyticsSummaries] = useState<Record<string, JourneyAnalyticsSummary>>({});
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Load draft from chrome.storage.local on mount
@@ -210,7 +215,8 @@ export function SidePanel() {
         "webjourney_invitations",
         "webjourney_launcher_enabled",
         "webjourney_launcher_position",
-        "webjourney_completed_journeys"
+        "webjourney_completed_journeys",
+        "webjourney_analytics_events"
       ], (res) => {
         if (res[STORAGE_KEY]) {
           const validated = validateJourney(res[STORAGE_KEY]);
@@ -233,6 +239,11 @@ export function SidePanel() {
         if (res.webjourney_completed_journeys) {
           setCompletedJourneys(res.webjourney_completed_journeys);
         }
+        if (res.webjourney_analytics_events) {
+          const events: AnalyticsEvent[] = res.webjourney_analytics_events;
+          setAnalyticsEvents(events);
+          setAnalyticsSummaries(aggregateAnalyticsEvents(events));
+        }
       });
     }
 
@@ -250,6 +261,17 @@ export function SidePanel() {
           text: `Target captured: <${message.tagName}> in section "${message.breadcrumb || "DOM"}"`,
           type: "success"
         });
+      } else if (message.type === "ANALYTICS_EVENT_RECORDED") {
+        // Refresh analytics from storage whenever a new event is recorded
+        if (chrome.storage?.local) {
+          chrome.storage.local.get(["webjourney_analytics_events"], (res) => {
+            if (res.webjourney_analytics_events) {
+              const events: AnalyticsEvent[] = res.webjourney_analytics_events;
+              setAnalyticsEvents(events);
+              setAnalyticsSummaries(aggregateAnalyticsEvents(events));
+            }
+          });
+        }
       }
     };
 
@@ -291,6 +313,33 @@ export function SidePanel() {
           chrome.tabs.sendMessage(activeTab.id, { type: "RESET_CHECKLIST_PROGRESS" });
         }
         setStatusMessage({ text: "Reset completed progress for all walkthroughs!", type: "info" });
+      });
+    }
+  };
+
+  const clearAnalytics = () => {
+    if (chrome.storage?.local) {
+      chrome.storage.local.remove("webjourney_analytics_events", () => {
+        setAnalyticsEvents([]);
+        setAnalyticsSummaries({});
+        setStatusMessage({ text: "Analytics data cleared.", type: "info" });
+      });
+    }
+  };
+
+  const refreshAnalytics = () => {
+    if (chrome.storage?.local) {
+      chrome.storage.local.get(["webjourney_analytics_events"], (res) => {
+        if (res.webjourney_analytics_events) {
+          const events: AnalyticsEvent[] = res.webjourney_analytics_events;
+          setAnalyticsEvents(events);
+          setAnalyticsSummaries(aggregateAnalyticsEvents(events));
+          setStatusMessage({ text: `Analytics refreshed — ${events.length} events loaded.`, type: "success" });
+        } else {
+          setAnalyticsEvents([]);
+          setAnalyticsSummaries({});
+          setStatusMessage({ text: "No analytics data recorded yet.", type: "info" });
+        }
       });
     }
   };
@@ -713,7 +762,7 @@ export function SidePanel() {
             )}
           </button>
           <button
-            onClick={() => setActiveView("widget")}
+            onClick={() => { setActiveView("widget"); }}
             style={{
               flex: 1,
               padding: "6px 8px",
@@ -730,9 +779,34 @@ export function SidePanel() {
               gap: "4px"
             }}
           >
-            <span>🌐 In-Page Widget</span>
+            <span>🌐 Widget</span>
             {launcherEnabled && (
               <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#10b981" }} />
+            )}
+          </button>
+          <button
+            onClick={() => { setActiveView("analytics"); refreshAnalytics(); }}
+            style={{
+              flex: 1,
+              padding: "6px 8px",
+              borderRadius: "6px",
+              border: "none",
+              background: activeView === "analytics" ? "#ffffff" : "rgba(255,255,255,0.15)",
+              color: activeView === "analytics" ? "#1e3a8a" : "#ffffff",
+              fontSize: "12px",
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "4px"
+            }}
+          >
+            <span>📊 Analytics</span>
+            {analyticsEvents.length > 0 && (
+              <span style={{ background: "rgba(255,255,255,0.25)", padding: "1px 5px", borderRadius: "10px", fontSize: "10px" }}>
+                {analyticsEvents.length}
+              </span>
             )}
           </button>
         </div>
@@ -1942,6 +2016,210 @@ export function SidePanel() {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Analytics View */}
+        {activeView === "analytics" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            {/* Header Banner */}
+            <div
+              style={{
+                background: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)",
+                borderRadius: "12px",
+                padding: "16px",
+                color: "#ffffff",
+                boxShadow: "0 4px 14px rgba(15,23,42,0.3)"
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                <span style={{ fontSize: "20px" }}>📊</span>
+                <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 800 }}>Journey Analytics</h3>
+              </div>
+              <p style={{ margin: 0, fontSize: "11px", opacity: 0.85, lineHeight: 1.5 }}>
+                Track step drop-offs, completion rates, and learner behaviour across all guided tours.
+              </p>
+              <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
+                <button
+                  onClick={refreshAnalytics}
+                  style={{
+                    padding: "5px 10px", borderRadius: "6px", border: "none",
+                    background: "rgba(255,255,255,0.15)", color: "#fff",
+                    fontSize: "11px", fontWeight: 700, cursor: "pointer"
+                  }}
+                >
+                  ↻ Refresh
+                </button>
+                <button
+                  onClick={clearAnalytics}
+                  style={{
+                    padding: "5px 10px", borderRadius: "6px", border: "none",
+                    background: "rgba(239,68,68,0.25)", color: "#fca5a5",
+                    fontSize: "11px", fontWeight: 700, cursor: "pointer"
+                  }}
+                >
+                  🗑 Clear All
+                </button>
+              </div>
+            </div>
+
+            {Object.keys(analyticsSummaries).length === 0 ? (
+              <div
+                style={{
+                  background: "#ffffff", borderRadius: "10px", padding: "32px 16px",
+                  border: "1px solid #e2e8f0", textAlign: "center"
+                }}
+              >
+                <div style={{ fontSize: "36px", marginBottom: "10px" }}>📭</div>
+                <p style={{ margin: 0, color: "#64748b", fontSize: "13px", fontWeight: 600 }}>No analytics data yet</p>
+                <p style={{ margin: "6px 0 0", color: "#94a3b8", fontSize: "11px" }}>
+                  Run a journey to start collecting funnel data.
+                </p>
+              </div>
+            ) : (
+              Object.values(analyticsSummaries).map((summary) => {
+                const completionPct = Math.round(summary.completionRate * 100);
+                return (
+                  <div
+                    key={summary.journeyId}
+                    style={{
+                      background: "#ffffff", borderRadius: "10px",
+                      border: "1px solid #e2e8f0", overflow: "hidden",
+                      boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
+                    }}
+                  >
+                    {/* Journey Header */}
+                    <div style={{ padding: "14px 16px", borderBottom: "1px solid #f1f5f9" }}>
+                      <div style={{ fontWeight: 800, fontSize: "13px", color: "#1e293b", marginBottom: "2px" }}>
+                        {summary.journeyName || summary.journeyId.slice(0, 8)}
+                      </div>
+                      {/* Overall KPI row */}
+                      <div style={{ display: "flex", gap: "12px", marginTop: "10px" }}>
+                        {[
+                          { label: "Starts", value: summary.totalStarts, color: "#3b82f6" },
+                          { label: "Completions", value: summary.totalCompletions, color: "#10b981" },
+                          { label: "Completion Rate", value: `${completionPct}%`, color: completionPct >= 50 ? "#10b981" : "#f59e0b" },
+                          {
+                            label: "Avg Duration",
+                            value: summary.avgCompletionTimeSec > 0 ? `${summary.avgCompletionTimeSec.toFixed(0)}s` : "—",
+                            color: "#6366f1"
+                          }
+                        ].map(({ label, value, color }) => (
+                          <div key={label} style={{ flex: 1, textAlign: "center" }}>
+                            <div style={{ fontSize: "17px", fontWeight: 800, color }}>{value}</div>
+                            <div style={{ fontSize: "9px", color: "#94a3b8", fontWeight: 600, marginTop: "1px" }}>{label}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Completion rate bar */}
+                    <div style={{ padding: "10px 16px", background: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#64748b", marginBottom: "5px" }}>
+                        <span>Overall completion funnel</span>
+                        <span style={{ fontWeight: 700 }}>{completionPct}%</span>
+                      </div>
+                      <div style={{ height: "8px", background: "#e2e8f0", borderRadius: "4px", overflow: "hidden" }}>
+                        <div
+                          style={{
+                            height: "100%",
+                            width: `${completionPct}%`,
+                            background: completionPct >= 75 ? "#10b981" : completionPct >= 40 ? "#f59e0b" : "#ef4444",
+                            borderRadius: "4px",
+                            transition: "width 0.5s ease"
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Most dropped step */}
+                    {summary.mostDroppedStep && (
+                      <div
+                        style={{
+                          padding: "8px 16px",
+                          background: "#fef2f2",
+                          borderBottom: "1px solid #fecaca",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px"
+                        }}
+                      >
+                        <span style={{ fontSize: "14px" }}>⚠️</span>
+                        <div>
+                          <div style={{ fontSize: "10px", fontWeight: 700, color: "#991b1b" }}>Highest Drop-off Step</div>
+                          <div style={{ fontSize: "11px", color: "#7f1d1d" }}>
+                            Step {(summary.mostDroppedStep.stepOrder ?? 0) + 1}: {summary.mostDroppedStep.stepTitle || "Untitled"} —{" "}
+                            <strong>{Math.round(summary.mostDroppedStep.dropOffRate * 100)}%</strong> dropped
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Per-step funnel bars */}
+                    {summary.steps.length > 0 && (
+                      <div style={{ padding: "12px 16px" }}>
+                        <div style={{ fontSize: "11px", fontWeight: 700, color: "#475569", marginBottom: "10px" }}>
+                          Step-by-Step Funnel
+                        </div>
+                        {summary.steps.map((step, idx) => {
+                          const completeW = step.views > 0 ? Math.round((step.completions / step.views) * 100) : 0;
+                          const skipW = step.views > 0 ? Math.round((step.skips / step.views) * 100) : 0;
+                          const exitW = step.views > 0 ? Math.round((step.exits / step.views) * 100) : 0;
+                          const isMostDropped =
+                            summary.mostDroppedStep !== undefined &&
+                            summary.mostDroppedStep.stepOrder === step.stepOrder;
+                          return (
+                            <div
+                              key={step.stepId}
+                              style={{
+                                marginBottom: "10px",
+                                padding: "8px 10px",
+                                borderRadius: "6px",
+                                background: isMostDropped ? "#fff7ed" : "#f8fafc",
+                                border: isMostDropped ? "1px solid #fed7aa" : "1px solid #f1f5f9"
+                              }}
+                            >
+                              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "5px" }}>
+                                <span style={{ fontSize: "10px", fontWeight: 700, color: isMostDropped ? "#c2410c" : "#334155" }}>
+                                  {isMostDropped ? "⚠️ " : ""}Step {idx + 1}: {step.stepTitle || "Untitled"}
+                                </span>
+                                <span style={{ fontSize: "9px", color: "#94a3b8" }}>
+                                  {step.views} views · {step.avgDurationSec.toFixed(0)}s avg
+                                </span>
+                              </div>
+                              {/* Stacked bar: completed / skipped / exited */}
+                              <div style={{ height: "6px", background: "#e2e8f0", borderRadius: "3px", overflow: "hidden", display: "flex" }}>
+                                <div style={{ width: `${completeW}%`, background: "#10b981", transition: "width 0.4s" }} title={`Completed: ${step.completions}`} />
+                                <div style={{ width: `${skipW}%`, background: "#f59e0b", transition: "width 0.4s" }} title={`Skipped: ${step.skips}`} />
+                                <div style={{ width: `${exitW}%`, background: "#ef4444", transition: "width 0.4s" }} title={`Exited: ${step.exits}`} />
+                              </div>
+                              <div style={{ display: "flex", gap: "10px", marginTop: "4px" }}>
+                                {[
+                                  { label: "✓ Done", count: step.completions, color: "#10b981" },
+                                  { label: "↷ Skip", count: step.skips, color: "#f59e0b" },
+                                  { label: "✕ Exit", count: step.exits, color: "#ef4444" }
+                                ].map(({ label, count, color }) => (
+                                  <span key={label} style={{ fontSize: "9px", color, fontWeight: 700 }}>
+                                    {label} {count}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+
+            {/* Total events footer */}
+            {analyticsEvents.length > 0 && (
+              <div style={{ textAlign: "center", fontSize: "10px", color: "#94a3b8", paddingBottom: "8px" }}>
+                {analyticsEvents.length} raw event{analyticsEvents.length !== 1 ? "s" : ""} recorded
+              </div>
+            )}
           </div>
         )}
       </main>
