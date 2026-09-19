@@ -28,117 +28,8 @@ const ACTION_METADATA: Record<StepActionType, { label: string; icon: string; bg:
   manual: { label: "Manual Continue", icon: "ℹ️", bg: "#fffbeb", text: "#b45309", border: "#fde68a" }
 };
 
-const CODEVIOSO_SAMPLE_JOURNEY: Journey = {
-  schemaVersion: 1,
-  id: "11111111-2222-3333-4444-555555555555",
-  name: "Codevioso Website Onboarding Tour",
-  description: "Interactive guided tour of Codevioso web services, digital products, and contact channels.",
-  themeColor: "emerald",
-  allowedOrigins: ["https://codevioso.com"],
-  startUrl: "https://codevioso.com/",
-  createdAt: "2026-09-19T12:00:00.000Z",
-  updatedAt: "2026-09-19T12:00:00.000Z",
-  steps: [
-    {
-      id: "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
-      order: 0,
-      title: "Welcome to Codevioso",
-      instruction: "Welcome! Codevioso delivers high-grade software solutions. Click the logo or continue.",
-      action: "click",
-      target: {
-        selectorCandidates: [
-          "header > div:nth-of-type(1) > a",
-          "#cv-nav a.cv-nav__logo",
-          "header a[href*='codevioso.com']"
-        ],
-        tagName: "a",
-        textContentSnippet: "Codevioso"
-      },
-      timeoutMs: 30000,
-      allowSkip: true,
-      showExitButton: true,
-      exitButtonLabel: "Exit",
-      customButtons: []
-    },
-    {
-      id: "b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e",
-      order: 1,
-      title: "Discover Tailored Services",
-      instruction: "Review engineering expertise across web applications, scalable APIs, and bespoke systems.",
-      action: "click",
-      target: {
-        selectorCandidates: [
-          "header > div:nth-of-type(1) > nav > ul > li:nth-of-type(2) > a",
-          "nav a[href*='services']",
-          "a[href*='/services']"
-        ],
-        tagName: "a",
-        textContentSnippet: "Services"
-      },
-      timeoutMs: 30000,
-      allowSkip: true,
-      showExitButton: true,
-      exitButtonLabel: "Exit",
-      customButtons: []
-    },
-    {
-      id: "c3d4e5f6-a7b8-9c0d-1e2f-3a4b5c6d7e8f",
-      order: 2,
-      title: "Explore Software Products",
-      instruction: "Discover proprietary turnkey solutions and digital accelerators designed for businesses.",
-      action: "click",
-      target: {
-        selectorCandidates: [
-          "header > div:nth-of-type(1) > nav > ul > li:nth-of-type(3) > a",
-          "nav a[href*='products']",
-          "a[href*='/products']"
-        ],
-        tagName: "a",
-        textContentSnippet: "Products"
-      },
-      timeoutMs: 30000,
-      allowSkip: true,
-      showExitButton: true,
-      exitButtonLabel: "Exit",
-      customButtons: []
-    },
-    {
-      id: "d4e5f6a7-b8c9-0d1e-2f3a-4b5c6d7e8f9a",
-      order: 3,
-      title: "Connect & Get in Touch",
-      instruction: "Reach out directly to kickstart your project or request a comprehensive architecture review.",
-      action: "click",
-      target: {
-        selectorCandidates: [
-          "header > div:nth-of-type(1) > div > div > a",
-          "header a[href*='contact']",
-          "a[href*='contact']"
-        ],
-        tagName: "a",
-        textContentSnippet: "Contact"
-      },
-      timeoutMs: 30000,
-      allowSkip: true,
-      showExitButton: true,
-      exitButtonLabel: "Exit Tour",
-      customButtons: [
-        {
-          id: "btn-codevioso-docs",
-          label: "Visit Docs",
-          action: "url",
-          url: "https://codevioso.com/",
-          variant: "secondary"
-        },
-        {
-          id: "btn-codevioso-exit",
-          label: "Finish & Exit",
-          action: "exit",
-          variant: "danger"
-        }
-      ]
-    }
-  ]
-};
+
+
 
 function WebJourneyLogoIcon({ size = 28 }: { size?: number }) {
   return (
@@ -685,21 +576,6 @@ export function SidePanel() {
             >
               ▶ Play
             </button>
-            <button
-              onClick={publishCurrentJourney}
-              style={{
-                background: "rgba(255, 255, 255, 0.2)",
-                color: "#ffffff",
-                border: "1px solid rgba(255, 255, 255, 0.4)",
-                borderRadius: "6px",
-                padding: "6px 10px",
-                fontSize: "12px",
-                fontWeight: 600,
-                cursor: "pointer"
-              }}
-            >
-              🚀 Share
-            </button>
           </div>
         </div>
 
@@ -845,63 +721,8 @@ export function SidePanel() {
           </div>
         )}
 
-        {activeView === "builder" ? (
+        {activeView === "builder" && (
           <div>
-            {/* Active Website & Quick Preset Bar */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "8px 12px",
-                background: "#ffffff",
-                borderRadius: "8px",
-                border: "1px solid #e2e8f0",
-                marginBottom: "12px",
-                fontSize: "11px"
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: "6px", overflow: "hidden" }}>
-                <span style={{ color: "#64748b" }}>Target Site:</span>
-                <span
-                  style={{
-                    background: "#eff6ff",
-                    color: "#1d4ed8",
-                    padding: "2px 6px",
-                    borderRadius: "4px",
-                    fontWeight: 700,
-                    textOverflow: "ellipsis",
-                    overflow: "hidden",
-                    whiteSpace: "nowrap",
-                    maxWidth: "130px"
-                  }}
-                  title={currentJourney.allowedOrigins[0] || ""}
-                >
-                  {currentJourney.allowedOrigins[0] ? new URL(currentJourney.allowedOrigins[0]).hostname : "Unset"}
-                </span>
-              </div>
-              <button
-                onClick={() => {
-                  saveJourney(CODEVIOSO_SAMPLE_JOURNEY);
-                  setStatusMessage({ text: "Codevioso.com sample tour loaded! Click 'Play' to test on codevioso.com.", type: "success" });
-                }}
-                style={{
-                  background: "#f0fdf4",
-                  color: "#166534",
-                  border: "1px solid #bbf7d0",
-                  borderRadius: "6px",
-                  padding: "4px 8px",
-                  fontSize: "10px",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "4px"
-                }}
-              >
-                ⚡ Load codevioso.com Tour
-              </button>
-            </div>
 
             {/* Tour Theme & Palette Bar */}
             <div
@@ -1686,7 +1507,9 @@ export function SidePanel() {
               </div>
             )}
           </div>
-        ) : (
+        )}
+
+        {activeView === "publish" && (
           /* Publish & Share View */
           <div>
             <div
