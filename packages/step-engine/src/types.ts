@@ -24,13 +24,16 @@ export interface PlayerContext {
   errorMessage?: string;
   matchedElementSelector?: string;
   stepStartTime?: number;
+  expectedUrl?: string;
+  targetUrl?: string;
 }
 
 export type PlayerEvent =
-  | { type: "START"; journey: Journey }
+  | { type: "START"; journey: Journey; startStepIndex?: number }
   | { type: "TARGET_RESOLVED"; selector: string }
   | { type: "TARGET_NOT_FOUND"; error?: string }
   | { type: "TARGET_AMBIGUOUS"; count: number }
+  | { type: "URL_MISMATCH"; expected: string; targetUrl?: string }
   | { type: "ACTION_PERFORMED" }
   | { type: "ACTION_VERIFIED" }
   | { type: "NEXT_STEP" }

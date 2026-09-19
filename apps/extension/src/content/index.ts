@@ -2,6 +2,7 @@ import {
   JourneyPlayer,
   generateUniqueSelector,
   generateElementBreadcrumb,
+  listenToRouteChanges,
   type PlayerContext
 } from "@webjourney/step-engine";
 import type {
@@ -78,8 +79,35 @@ class WebJourneyOverlay {
     this.initScrollAndResizeListeners();
     this.initKeyboardNavigation();
     this.initStorageListener();
+    this.initLifecycleAndRouteListeners();
     this.refreshAvailableJourneys();
     this.checkResumableRun();
+  }
+
+  private initLifecycleAndRouteListeners() {
+    // Preserve journey state before page unload / navigation
+    window.addEventListener("beforeunload", () => {
+      const ctx = this.player.getContext();
+      if (ctx.journey && ctx.state !== "idle" && ctx.state !== "completed") {
+        this.saveActiveRun(ctx);
+      }
+    });
+
+    window.addEventListener("pagehide", () => {
+      const ctx = this.player.getContext();
+      if (ctx.journey && ctx.state !== "idle" && ctx.state !== "completed") {
+        this.saveActiveRun(ctx);
+      }
+    });
+
+    // Detect client-side SPA route transitions (React Router, Next.js, Vue, history/hash)
+    listenToRouteChanges(() => {
+      const ctx = this.player.getContext();
+      if (ctx.journey && ctx.state === "blocked" && ctx.blockReason === "url_mismatch") {
+        this.player.resume();
+      }
+      this.refreshAvailableJourneys();
+    });
   }
 
   private initShadowHost() {
@@ -676,7 +704,7 @@ class WebJourneyOverlay {
     });
   }
 
-  private showBackdrop() {
+  public showBackdrop() {
     if (!this.backdropEl || !this.host) return;
     this.updateLauncherVisibility(false);
     this.host.style.position = "fixed";
@@ -731,33 +759,102 @@ class WebJourneyOverlay {
     hole.setAttribute("height", `${height}`);
   }
 
+  private saveActiveRun(context: PlayerContext) {
+    if (!context.journey) return;
+    const data = {
+      journey: context.journey,
+      currentStepIndex: context.currentStepIndex,
+      status: context.state,
+      timestamp: Date.now()
+    };
+    try {
+      sessionStorage.setItem(RUN_STORAGE_KEY, JSON.stringify(data));
+    } catch {
+      // ignore
+    }
+    if (chrome.storage?.local) {
+      chrome.storage.local.set({ [RUN_STORAGE_KEY]: data });
+    }
+  }
+
+  private clearActiveRun() {
+    try {
+      sessionStorage.removeItem(RUN_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    if (chrome.storage?.local) {
+      chrome.storage.local.remove([RUN_STORAGE_KEY]);
+    }
+  }
+
   private checkResumableRun() {
+    const resumeFromData = (saved: any) => {
+      if (!saved || !saved.journey) return;
+
+      // Expire old run sessions after 2 hours
+      if (saved.timestamp && Date.now() - saved.timestamp > 7200000) {
+        this.clearActiveRun();
+        return;
+      }
+
+      // Verify origin allowed
+      const currentOrigin = window.location.origin;
+      const isAllowed = saved.journey.allowedOrigins.some((orig: string) => {
+        try {
+          return new URL(orig).origin === currentOrigin || currentOrigin.includes(orig) || orig === "*";
+        } catch {
+          return true;
+        }
+      });
+      if (!isAllowed) return;
+
+      // Resume active or blocked/resolving steps across route navigation
+      if (["active", "resolving", "blocked", "paused"].includes(saved.status)) {
+        this.showBackdrop();
+        this.player.start(saved.journey, saved.currentStepIndex || 0);
+      }
+    };
+
+    // 1. Try synchronous sessionStorage first (for instantaneous recovery upon page navigation)
+    try {
+      const sessionData = sessionStorage.getItem(RUN_STORAGE_KEY);
+      if (sessionData) {
+        const parsed = JSON.parse(sessionData);
+        if (parsed?.journey) {
+          resumeFromData(parsed);
+          return;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    // 2. Fall back to chrome.storage.local
     if (chrome.storage?.local) {
       chrome.storage.local.get([RUN_STORAGE_KEY], (res) => {
-        const saved = res[RUN_STORAGE_KEY];
-        if (saved && saved.journey && saved.status === "active") {
-          this.player.start(saved.journey, saved.currentStepIndex || 0);
-        }
+        resumeFromData(res[RUN_STORAGE_KEY]);
       });
     }
   }
 
   private handlePlayerStateChange(context: PlayerContext) {
-    if (chrome.storage?.local) {
-      if (context.state === "completed" || context.state === "idle") {
-        chrome.storage.local.remove([RUN_STORAGE_KEY]);
-      } else {
-        chrome.storage.local.set({
-          [RUN_STORAGE_KEY]: {
-            journey: context.journey,
-            currentStepIndex: context.currentStepIndex,
-            status: context.state
-          }
-        });
-      }
+    if (context.state === "completed" || context.state === "idle") {
+      this.clearActiveRun();
+    } else {
+      this.saveActiveRun(context);
     }
 
     if (context.state === "completed") {
+      if (context.journey?.id) {
+        this.completedJourneyIds.add(context.journey.id);
+        if (chrome.storage?.local) {
+          chrome.storage.local.set({
+            webjourney_completed_journeys: Array.from(this.completedJourneyIds)
+          });
+        }
+        this.updateLauncherAndChecklist();
+      }
       this.renderCompletionCard(context.journey!);
     } else if (context.state === "blocked") {
       this.renderBlockedCard(context);
@@ -769,6 +866,7 @@ class WebJourneyOverlay {
   private renderBlockedCard(context: PlayerContext) {
     if (!this.tooltipEl) return;
     const currentStep = context.journey?.steps[context.currentStepIndex];
+    const isUrlMismatch = context.blockReason === "url_mismatch";
 
     this.showBackdrop();
     this.updateBackdropSpotlight();
@@ -777,35 +875,81 @@ class WebJourneyOverlay {
       this.highlightBox.style.display = "none";
     }
 
-    this.tooltipEl.innerHTML = `
-      <div class="wj-card-accent-bar" style="background: #ef4444;"></div>
-      <div class="wj-card-inner">
-        <div class="wj-tooltip-header">
-          <span class="wj-step-counter" style="color: #dc2626; background: #fee2e2; border-color: #fecaca;">
-            Step ${context.currentStepIndex + 1} of ${context.journey?.steps.length}
-          </span>
-          <button id="wj-blocked-close-btn" class="wj-close-btn" title="Exit Tour">&times;</button>
-        </div>
-        <h4 class="wj-title">${escapeHtml(currentStep?.title || "Target Not Found")}</h4>
-        <div class="wj-error-box">
-          ${escapeHtml(context.errorMessage || "The target element could not be located on this page.")}
-        </div>
-        <div class="wj-instruction">
-          ${escapeHtml(currentStep?.fallbackInstruction || "You can retry locating the element, or skip this step to keep going.")}
-        </div>
-        <div class="wj-footer">
-          <button class="wj-button wj-button-secondary" id="wj-retry-btn">↻ Retry</button>
-          <div style="display: flex; gap: 6px;">
+    const targetNavigateUrl = context.targetUrl || currentStep?.urlMatcher?.targetUrl || (isUrlMismatch ? context.expectedUrl : undefined);
+
+    if (isUrlMismatch) {
+      this.tooltipEl.innerHTML = `
+        <div class="wj-card-accent-bar" style="background: linear-gradient(90deg, #6366f1 0%, #8b5cf6 100%);"></div>
+        <div class="wj-card-inner">
+          <div class="wj-tooltip-header">
+            <span class="wj-step-counter" style="color: #6366f1; background: #eef2ff; border-color: #c7d2fe;">
+              Step ${context.currentStepIndex + 1} of ${context.journey?.steps.length} &bull; Page Transition
+            </span>
+            <button id="wj-blocked-close-btn" class="wj-close-btn" title="Exit Tour">&times;</button>
+          </div>
+          <h4 class="wj-title">${escapeHtml(currentStep?.title || "Next Page")}</h4>
+          <div style="background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; display: flex; align-items: flex-start; gap: 8px;">
+            <span style="font-size: 16px; line-height: 1;">🧭</span>
+            <div>
+              <div style="font-size: 11px; font-weight: 700; color: #5b21b6; text-transform: uppercase; letter-spacing: 0.5px;">Target Route</div>
+              <div style="font-size: 12px; color: #4c1d95; font-weight: 600; margin-top: 2px;">${escapeHtml(context.expectedUrl || "Target Page")}</div>
+            </div>
+          </div>
+          <div class="wj-instruction">
+            ${escapeHtml(currentStep?.instruction || "Please navigate to the specified page to continue this guide.")}
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; margin-top: 10px; margin-bottom: 14px;">
+            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #6366f1; animation: wjPulse 1.5s infinite;"></span>
+            <span>Listening for route transition...</span>
+          </div>
+          <div class="wj-footer">
             ${
-              currentStep?.allowSkip
-                ? '<button class="wj-button wj-button-secondary" id="wj-skip-btn">Skip</button>'
-                : ""
+              targetNavigateUrl
+                ? `<button class="wj-button wj-button-primary" id="wj-navigate-page-btn" style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); border-color: #4f46e5;">Go to Page &rarr;</button>`
+                : '<button class="wj-button wj-button-secondary" id="wj-retry-btn">↻ Check Route</button>'
             }
-            <button class="wj-button wj-button-secondary" id="wj-exit-btn">Exit</button>
+            <div style="display: flex; gap: 6px;">
+              ${
+                currentStep?.allowSkip
+                  ? '<button class="wj-button wj-button-secondary" id="wj-skip-btn">Skip</button>'
+                  : ""
+              }
+              <button class="wj-button wj-button-secondary" id="wj-exit-btn">Exit</button>
+            </div>
           </div>
         </div>
-      </div>
-    `;
+      `;
+    } else {
+      this.tooltipEl.innerHTML = `
+        <div class="wj-card-accent-bar" style="background: #ef4444;"></div>
+        <div class="wj-card-inner">
+          <div class="wj-tooltip-header">
+            <span class="wj-step-counter" style="color: #dc2626; background: #fee2e2; border-color: #fecaca;">
+              Step ${context.currentStepIndex + 1} of ${context.journey?.steps.length}
+            </span>
+            <button id="wj-blocked-close-btn" class="wj-close-btn" title="Exit Tour">&times;</button>
+          </div>
+          <h4 class="wj-title">${escapeHtml(currentStep?.title || "Target Not Found")}</h4>
+          <div class="wj-error-box">
+            ${escapeHtml(context.errorMessage || "The target element could not be located on this page.")}
+          </div>
+          <div class="wj-instruction">
+            ${escapeHtml(currentStep?.fallbackInstruction || "You can retry locating the element, or skip this step to keep going.")}
+          </div>
+          <div class="wj-footer">
+            <button class="wj-button wj-button-secondary" id="wj-retry-btn">↻ Retry</button>
+            <div style="display: flex; gap: 6px;">
+              ${
+                currentStep?.allowSkip
+                  ? '<button class="wj-button wj-button-secondary" id="wj-skip-btn">Skip</button>'
+                  : ""
+              }
+              <button class="wj-button wj-button-secondary" id="wj-exit-btn">Exit</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
 
     this.tooltipEl.style.position = "fixed";
     this.tooltipEl.style.display = "block";
@@ -819,6 +963,11 @@ class WebJourneyOverlay {
       this.clearHighlight();
     };
 
+    this.tooltipEl.querySelector("#wj-navigate-page-btn")?.addEventListener("click", () => {
+      if (targetNavigateUrl) {
+        window.location.href = targetNavigateUrl;
+      }
+    });
     this.tooltipEl.querySelector("#wj-retry-btn")?.addEventListener("click", () => {
       this.player.resume();
     });
@@ -1776,8 +1925,20 @@ window.addEventListener("message", (event) => {
     overlay.closeChecklist();
   } else if (event.data?.type === "WJ_TEST_RESET_PROGRESS") {
     overlay.resetProgress();
+  } else if (event.data?.type === "WJ_TEST_START") {
+    if (event.data.journey) {
+      overlay.showBackdrop();
+      (overlay as any).player.start(event.data.journey, event.data.resumeStepIndex || 0);
+    }
+  } else if (event.data?.type === "WJ_TEST_NEXT") {
+    (overlay as any).player.nextStep();
+  } else if (event.data?.type === "WJ_TEST_PREV") {
+    (overlay as any).player.previousStep();
+  } else if (event.data?.type === "WJ_TEST_SKIP") {
+    (overlay as any).player.skipStep();
   } else if (event.data?.type === "WJ_TEST_STOP") {
     overlay.clearHighlight();
+    (overlay as any).player.stop();
   }
 });
 

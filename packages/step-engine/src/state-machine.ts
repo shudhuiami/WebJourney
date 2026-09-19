@@ -12,10 +12,17 @@ export function playerReducer(context: PlayerContext, event: PlayerEvent): Playe
       return {
         ...context,
         journey: event.journey,
-        currentStepIndex: 0,
+        currentStepIndex:
+          event.startStepIndex !== undefined &&
+          event.startStepIndex >= 0 &&
+          event.startStepIndex < event.journey.steps.length
+            ? event.startStepIndex
+            : 0,
         state: "resolving",
         blockReason: undefined,
         errorMessage: undefined,
+        expectedUrl: undefined,
+        targetUrl: undefined,
         stepStartTime: Date.now()
       };
 
@@ -25,7 +32,9 @@ export function playerReducer(context: PlayerContext, event: PlayerEvent): Playe
         state: "active",
         matchedElementSelector: event.selector,
         blockReason: undefined,
-        errorMessage: undefined
+        errorMessage: undefined,
+        expectedUrl: undefined,
+        targetUrl: undefined
       };
 
     case "TARGET_NOT_FOUND":
@@ -42,6 +51,16 @@ export function playerReducer(context: PlayerContext, event: PlayerEvent): Playe
         state: "blocked",
         blockReason: "target_ambiguous",
         errorMessage: `Found ${event.count} matching elements; unable to determine precise target`
+      };
+
+    case "URL_MISMATCH":
+      return {
+        ...context,
+        state: "blocked",
+        blockReason: "url_mismatch",
+        errorMessage: `This step takes place on: ${event.expected}`,
+        expectedUrl: event.expected,
+        targetUrl: event.targetUrl
       };
 
     case "ACTION_PERFORMED":
@@ -67,6 +86,8 @@ export function playerReducer(context: PlayerContext, event: PlayerEvent): Playe
         matchedElementSelector: undefined,
         blockReason: undefined,
         errorMessage: undefined,
+        expectedUrl: undefined,
+        targetUrl: undefined,
         stepStartTime: Date.now()
       };
     }
@@ -80,6 +101,8 @@ export function playerReducer(context: PlayerContext, event: PlayerEvent): Playe
         matchedElementSelector: undefined,
         blockReason: undefined,
         errorMessage: undefined,
+        expectedUrl: undefined,
+        targetUrl: undefined,
         stepStartTime: Date.now()
       };
     }
@@ -104,6 +127,8 @@ export function playerReducer(context: PlayerContext, event: PlayerEvent): Playe
         matchedElementSelector: undefined,
         blockReason: undefined,
         errorMessage: undefined,
+        expectedUrl: undefined,
+        targetUrl: undefined,
         stepStartTime: Date.now()
       };
     }

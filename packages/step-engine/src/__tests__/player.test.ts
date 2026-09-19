@@ -33,6 +33,22 @@ const mockTestJourney: Journey = {
       action: "manual",
       timeoutMs: 5000,
       allowSkip: false
+    },
+    {
+      id: "step-3",
+      order: 2,
+      title: "Cross Page Route Step",
+      instruction: "Review services overview",
+      action: "click",
+      urlMatcher: {
+        path: "/services"
+      },
+      target: {
+        selectorCandidates: ["#services-header"],
+        tagName: "h1"
+      },
+      timeoutMs: 5000,
+      allowSkip: true
     }
   ]
 };
@@ -59,6 +75,43 @@ describe("JourneyPlayer", () => {
     expect(onHighlightTarget).toHaveBeenCalledWith(btn, mockTestJourney.steps[0]);
 
     document.body.removeChild(btn);
+  });
+
+  it("can resume at a specific step index for persistent recovery", () => {
+    const onStateChange = vi.fn();
+    const onHighlightTarget = vi.fn();
+    const onClearHighlight = vi.fn();
+
+    const player = new JourneyPlayer({
+      onStateChange,
+      onHighlightTarget,
+      onClearHighlight
+    });
+
+    // Start with resumeStepIndex = 1 (step-2: manual)
+    player.start(mockTestJourney, 1);
+
+    expect(player.getContext().currentStepIndex).toBe(1);
+    expect(player.getState()).toBe("active");
+  });
+
+  it("triggers URL_MISMATCH and blocks gracefully when step expects a different route", () => {
+    const onStateChange = vi.fn();
+    const onHighlightTarget = vi.fn();
+    const onClearHighlight = vi.fn();
+
+    const player = new JourneyPlayer({
+      onStateChange,
+      onHighlightTarget,
+      onClearHighlight
+    });
+
+    // Start directly on step 2 which expects /services
+    player.start(mockTestJourney, 2);
+
+    expect(player.getState()).toBe("blocked");
+    expect(player.getContext().blockReason).toBe("url_mismatch");
+    expect(player.getContext().expectedUrl).toBe("/services");
   });
 
   it("can pause and resume playback cleanly", () => {
@@ -90,10 +143,13 @@ describe("JourneyPlayer", () => {
     });
 
     player.start(mockTestJourney);
-    player.nextStep();
+    player.nextStep(); // to step 1
     expect(player.getContext().currentStepIndex).toBe(1);
 
-    player.nextStep();
+    player.nextStep(); // to step 2
+    expect(player.getContext().currentStepIndex).toBe(2);
+
+    player.skipStep(); // completes (step 2 has allowSkip: true)
     expect(player.getState()).toBe("completed");
   });
 });

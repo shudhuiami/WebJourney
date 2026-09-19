@@ -342,6 +342,21 @@ export function SidePanel() {
         ? "field-complete"
         : "click";
 
+    let urlMatcher = undefined;
+    if (activeTab.url) {
+      try {
+        const parsed = new URL(activeTab.url);
+        if (parsed.pathname && parsed.pathname !== "/") {
+          urlMatcher = {
+            path: parsed.pathname,
+            targetUrl: activeTab.url
+          };
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     const newStep: StepDefinition = {
       ...createDefaultStep(currentJourney.steps.length),
       title: `${selectedTarget.tagName === "button" ? "Click" : "Interact with"} ${selectedTarget.textContent?.slice(0, 24) || selectedTarget.tagName}`,
@@ -351,7 +366,8 @@ export function SidePanel() {
         selectorCandidates: [selectedTarget.selector],
         tagName: selectedTarget.tagName,
         textContentSnippet: selectedTarget.textContent
-      }
+      },
+      urlMatcher
     };
 
     const updated = {
@@ -363,6 +379,43 @@ export function SidePanel() {
     setEditingStepId(newStep.id);
     setSelectedTarget(null);
     setStatusMessage({ text: `Step #${updated.steps.length} created! You can edit instructions below.`, type: "success" });
+  };
+
+  const addManualStep = () => {
+    let urlMatcher = undefined;
+    if (activeTab.url) {
+      try {
+        const parsed = new URL(activeTab.url);
+        if (parsed.pathname && parsed.pathname !== "/") {
+          urlMatcher = {
+            path: parsed.pathname,
+            targetUrl: activeTab.url
+          };
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const newStep: StepDefinition = {
+      ...createDefaultStep(currentJourney.steps.length),
+      title: `Page Overview / Navigation`,
+      instruction: `Review the page contents or navigate to the next section to proceed.`,
+      action: "manual",
+      urlMatcher
+    };
+
+    const updated = {
+      ...currentJourney,
+      steps: [...currentJourney.steps, newStep],
+      updatedAt: new Date().toISOString()
+    };
+    saveJourney(updated);
+    setEditingStepId(newStep.id);
+    setStatusMessage({
+      text: `Step #${updated.steps.length} created! Configure instruction or target route below.`,
+      type: "success"
+    });
   };
 
   const updateStep = (stepId: string, patch: Partial<StepDefinition>) => {
@@ -850,27 +903,47 @@ export function SidePanel() {
                     Hover over buttons, inputs, or sections on the live website.
                   </p>
                 </div>
-                <button
-                  onClick={toggleInspector}
-                  style={{
-                    padding: "8px 16px",
-                    borderRadius: "8px",
-                    border: "none",
-                    background: isInspecting
-                      ? "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)"
-                      : "linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)",
-                    color: "#ffffff",
-                    fontWeight: 700,
-                    fontSize: "12px",
-                    cursor: "pointer",
-                    boxShadow: isInspecting
-                      ? "0 0 0 3px rgba(239, 68, 68, 0.3)"
-                      : "0 4px 10px rgba(79, 70, 229, 0.3)",
-                    transition: "all 0.15s ease"
-                  }}
-                >
-                  {isInspecting ? "✕ Stop Picking" : "🔍 Pick Element"}
-                </button>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button
+                    onClick={toggleInspector}
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: isInspecting
+                        ? "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)"
+                        : "linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)",
+                      color: "#ffffff",
+                      fontWeight: 700,
+                      fontSize: "12px",
+                      cursor: "pointer",
+                      boxShadow: isInspecting
+                        ? "0 0 0 3px rgba(239, 68, 68, 0.3)"
+                        : "0 4px 10px rgba(79, 70, 229, 0.3)",
+                      transition: "all 0.15s ease"
+                    }}
+                  >
+                    {isInspecting ? "✕ Stop" : "🔍 Pick Element"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={addManualStep}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: "8px",
+                      border: "1px solid #c7d2fe",
+                      background: "#eef2ff",
+                      color: "#4338ca",
+                      fontWeight: 700,
+                      fontSize: "12px",
+                      cursor: "pointer",
+                      transition: "all 0.15s ease"
+                    }}
+                    title="Add a manual instruction or cross-page route step without picking an element"
+                  >
+                    + Route Step
+                  </button>
+                </div>
               </div>
 
               {/* Captured Target Detail Card */}
@@ -1140,6 +1213,115 @@ export function SidePanel() {
                             </div>
                           </div>
 
+                          {/* Page & Route Targeting Configuration */}
+                          <div style={{ padding: "10px 12px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: step.urlMatcher ? "8px" : "0" }}>
+                              <div>
+                                <span style={{ fontSize: "11px", fontWeight: 700, color: "#334155" }}>
+                                  🧭 Page & Route Targeting
+                                </span>
+                                <span style={{ fontSize: "10px", color: "#64748b", marginLeft: "6px" }}>
+                                  {step.urlMatcher?.path || step.urlMatcher?.pattern ? "Specific Route" : "Any Page"}
+                                </span>
+                              </div>
+                              <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", cursor: "pointer", fontWeight: 600, color: "#475569" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={!!step.urlMatcher}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      let defaultPath = "";
+                                      let defaultUrl = "";
+                                      if (activeTab.url) {
+                                        try {
+                                          const parsed = new URL(activeTab.url);
+                                          defaultPath = parsed.pathname;
+                                          defaultUrl = activeTab.url;
+                                        } catch {
+                                          // ignore
+                                        }
+                                      }
+                                      updateStep(step.id, {
+                                        urlMatcher: {
+                                          path: defaultPath || "/",
+                                          targetUrl: defaultUrl || undefined,
+                                          autoNavigate: false
+                                        }
+                                      });
+                                    } else {
+                                      updateStep(step.id, { urlMatcher: undefined });
+                                    }
+                                  }}
+                                />
+                                <span>Target Specific Route</span>
+                              </label>
+                            </div>
+
+                            {step.urlMatcher && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "6px" }}>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
+                                  <div>
+                                    <label style={{ display: "block", fontSize: "10px", fontWeight: 600, color: "#64748b", marginBottom: "2px" }}>
+                                      Target Path / Pattern
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={step.urlMatcher.path || step.urlMatcher.pattern || ""}
+                                      placeholder="/services or */pricing*"
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        updateStep(step.id, {
+                                          urlMatcher: {
+                                            ...step.urlMatcher,
+                                            path: val.includes("*") ? undefined : val,
+                                            pattern: val.includes("*") ? val : undefined
+                                          }
+                                        });
+                                      }}
+                                      style={{ width: "100%", padding: "5px 7px", fontSize: "11px", borderRadius: "4px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label style={{ display: "block", fontSize: "10px", fontWeight: 600, color: "#64748b", marginBottom: "2px" }}>
+                                      Navigation URL (Optional)
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={step.urlMatcher.targetUrl || ""}
+                                      placeholder="https://example.com/page"
+                                      onChange={(e) =>
+                                        updateStep(step.id, {
+                                          urlMatcher: {
+                                            ...step.urlMatcher,
+                                            targetUrl: e.target.value
+                                          }
+                                        })
+                                      }
+                                      style={{ width: "100%", padding: "5px 7px", fontSize: "11px", borderRadius: "4px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
+                                    />
+                                  </div>
+                                </div>
+
+                                <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", cursor: "pointer", color: "#475569" }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={step.urlMatcher.autoNavigate || false}
+                                    onChange={(e) =>
+                                      updateStep(step.id, {
+                                        urlMatcher: {
+                                          ...step.urlMatcher,
+                                          autoNavigate: e.target.checked
+                                        }
+                                      })
+                                    }
+                                  />
+                                  <span>Automatically redirect learner to this page if on a different route</span>
+                                </label>
+                              </div>
+                            )}
+                          </div>
+
                           {/* Navigation & Exit Button Configuration */}
                           <div style={{ padding: "10px 12px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: step.showExitButton !== false ? "8px" : "0" }}>
@@ -1390,9 +1572,20 @@ export function SidePanel() {
                           <p style={{ margin: "0 0 6px", lineHeight: 1.4 }}>{step.instruction}</p>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                              <code style={{ fontSize: "10px", color: "#64748b" }}>
-                                {step.target?.selectorCandidates[0]?.slice(0, 24)}...
-                              </code>
+                              {step.urlMatcher && (step.urlMatcher.path || step.urlMatcher.pattern) && (
+                                <span style={{ fontSize: "9px", background: "#f5f3ff", color: "#6d28d9", border: "1px solid #ddd6fe", padding: "1px 5px", borderRadius: "4px", fontWeight: 600 }}>
+                                  🧭 {step.urlMatcher.path || step.urlMatcher.pattern}
+                                </span>
+                              )}
+                              {step.target ? (
+                                <code style={{ fontSize: "10px", color: "#64748b" }}>
+                                  {step.target.selectorCandidates[0]?.slice(0, 24)}...
+                                </code>
+                              ) : (
+                                <span style={{ fontSize: "9px", background: "#f8fafc", color: "#64748b", border: "1px solid #cbd5e1", padding: "1px 5px", borderRadius: "4px", fontWeight: 600 }}>
+                                  ℹ️ Route / Manual
+                                </span>
+                              )}
                               {step.customButtons && step.customButtons.length > 0 && (
                                 <span style={{ fontSize: "9px", background: "#f1f5f9", color: "#475569", border: "1px solid #cbd5e1", padding: "1px 5px", borderRadius: "4px", fontWeight: 600 }}>
                                   {step.customButtons.length} btn{step.customButtons.length > 1 ? "s" : ""}

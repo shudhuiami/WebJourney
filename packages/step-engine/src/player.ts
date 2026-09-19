@@ -1,7 +1,13 @@
 import type { Journey, StepDefinition } from "@webjourney/journey-schema";
 import { playerReducer, initialPlayerContext } from "./state-machine";
 import { resolveTargetElement } from "./fingerprint";
-import { observeTargetClick, observeFieldCompletion, observeUrlNavigation, type ObserverCleanup } from "./observers";
+import {
+  observeTargetClick,
+  observeFieldCompletion,
+  observeUrlNavigation,
+  checkUrlMatch,
+  type ObserverCleanup
+} from "./observers";
 import type { PlayerContext, PlayerState } from "./types";
 
 export interface PlayerCallbacks {
@@ -15,6 +21,7 @@ export class JourneyPlayer {
   private callbacks: PlayerCallbacks;
   private activeCleanup: ObserverCleanup | null = null;
   private resolveTimer: any = null;
+  private mutationObserver: MutationObserver | null = null;
 
   constructor(callbacks: PlayerCallbacks) {
     this.callbacks = callbacks;
@@ -30,10 +37,11 @@ export class JourneyPlayer {
 
   public start(journey: Journey, resumeStepIndex = 0) {
     this.cleanupCurrentStep();
-    this.context = playerReducer(initialPlayerContext, { type: "START", journey });
-    if (resumeStepIndex > 0 && resumeStepIndex < journey.steps.length) {
-      this.context.currentStepIndex = resumeStepIndex;
-    }
+    this.context = playerReducer(initialPlayerContext, {
+      type: "START",
+      journey,
+      startStepIndex: resumeStepIndex
+    });
     this.callbacks.onStateChange(this.context);
     this.executeCurrentStep();
   }
@@ -92,6 +100,10 @@ export class JourneyPlayer {
   }
 
   private cleanupCurrentStep() {
+    if (this.mutationObserver) {
+      this.mutationObserver.disconnect();
+      this.mutationObserver = null;
+    }
     if (this.activeCleanup) {
       this.activeCleanup();
       this.activeCleanup = null;
@@ -103,46 +115,106 @@ export class JourneyPlayer {
   }
 
   private executeCurrentStep() {
+    this.cleanupCurrentStep();
     const currentStep = this.context.journey?.steps[this.context.currentStepIndex];
     if (!currentStep) return;
 
-    // Manual step: does not require a DOM target, completes on user click
+    // 1. Cross-Page Route Check: Verify whether learner is currently on expected page/route
+    if (currentStep.urlMatcher && typeof window !== "undefined") {
+      const isRouteSatisfied = checkUrlMatch(currentStep.urlMatcher);
+      if (!isRouteSatisfied) {
+        const expected =
+          currentStep.urlMatcher.path ||
+          currentStep.urlMatcher.pattern ||
+          currentStep.urlMatcher.origin ||
+          "target route";
+
+        this.context = playerReducer(this.context, {
+          type: "URL_MISMATCH",
+          expected,
+          targetUrl: currentStep.urlMatcher.targetUrl
+        });
+        this.callbacks.onClearHighlight();
+        this.callbacks.onStateChange(this.context);
+
+        // Listen for navigation transition to target route
+        this.activeCleanup = observeUrlNavigation(currentStep.urlMatcher, () => {
+          this.executeCurrentStep();
+        });
+
+        // If autoNavigate is specified and targetUrl exists, navigate automatically
+        if (currentStep.urlMatcher.autoNavigate && currentStep.urlMatcher.targetUrl) {
+          window.location.href = currentStep.urlMatcher.targetUrl;
+        }
+
+        return;
+      }
+    }
+
+    // 2. Manual step or step without specific target: completes on user click or navigates
     if (currentStep.action === "manual" || !currentStep.target) {
       this.context = playerReducer(this.context, { type: "TARGET_RESOLVED", selector: "body" });
       this.callbacks.onStateChange(this.context);
+
+      if (currentStep.action === "navigation" && currentStep.urlMatcher) {
+        this.activeCleanup = observeUrlNavigation(currentStep.urlMatcher, () => this.nextStep());
+      }
       return;
     }
 
-    // Interactive target resolution
+    // 3. Interactive target resolution with instant lookup & MutationObserver fallback
     const fingerprint = currentStep.target;
-    const resolved = resolveTargetElement(fingerprint, document);
+    const initialResolved = resolveTargetElement(fingerprint, document);
 
-    if (resolved.element) {
-      this.context = playerReducer(this.context, {
-        type: "TARGET_RESOLVED",
-        selector: resolved.matchedCandidate || fingerprint.selectorCandidates[0]
-      });
-      this.callbacks.onHighlightTarget(resolved.element, currentStep);
-      this.callbacks.onStateChange(this.context);
-
-      // Attach observer to the resolved element
-      this.attachObserver(resolved.element, currentStep);
-    } else {
-      // Retry resolution briefly before blocking (for dynamic elements)
-      this.resolveTimer = setTimeout(() => {
-        const retry = resolveTargetElement(fingerprint, document);
-        if (retry.element) {
-          this.executeCurrentStep();
-        } else {
-          this.context = playerReducer(this.context, {
-            type: "TARGET_NOT_FOUND",
-            error: `Unable to locate target: ${fingerprint.selectorCandidates[0]}`
-          });
-          this.callbacks.onClearHighlight();
-          this.callbacks.onStateChange(this.context);
-        }
-      }, 1500);
+    if (initialResolved.element) {
+      this.activateStepWithTarget(initialResolved.element, currentStep, initialResolved.matchedCandidate || fingerprint.selectorCandidates[0]);
+      return;
     }
+
+    // Target not found yet; could be rendering asynchronously (SPA or dynamic hydration).
+    // Set up MutationObserver to react immediately once target appears in DOM.
+    if (typeof MutationObserver !== "undefined" && document.body) {
+      this.mutationObserver = new MutationObserver(() => {
+        const retryResolved = resolveTargetElement(fingerprint, document);
+        if (retryResolved.element) {
+          this.cleanupCurrentStep();
+          this.activateStepWithTarget(retryResolved.element, currentStep, retryResolved.matchedCandidate || fingerprint.selectorCandidates[0]);
+        }
+      });
+
+      this.mutationObserver.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true
+      });
+    }
+
+    // Set fallback timeout in case the element never renders
+    const maxWaitMs = Math.min(currentStep.timeoutMs || 8000, 8000);
+    this.resolveTimer = setTimeout(() => {
+      this.cleanupCurrentStep();
+      const finalCheck = resolveTargetElement(fingerprint, document);
+      if (finalCheck.element) {
+        this.activateStepWithTarget(finalCheck.element, currentStep, finalCheck.matchedCandidate || fingerprint.selectorCandidates[0]);
+      } else {
+        this.context = playerReducer(this.context, {
+          type: "TARGET_NOT_FOUND",
+          error: `Unable to locate target: ${fingerprint.selectorCandidates[0]}`
+        });
+        this.callbacks.onClearHighlight();
+        this.callbacks.onStateChange(this.context);
+      }
+    }, maxWaitMs);
+  }
+
+  private activateStepWithTarget(element: Element, step: StepDefinition, selector: string) {
+    this.context = playerReducer(this.context, {
+      type: "TARGET_RESOLVED",
+      selector
+    });
+    this.callbacks.onHighlightTarget(element, step);
+    this.callbacks.onStateChange(this.context);
+    this.attachObserver(element, step);
   }
 
   private attachObserver(element: Element, step: StepDefinition) {

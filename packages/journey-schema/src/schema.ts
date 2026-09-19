@@ -20,9 +20,11 @@ export const TargetFingerprintSchema = z.object({
 export type TargetFingerprint = z.infer<typeof TargetFingerprintSchema>;
 
 export const UrlMatcherSchema = z.object({
-  origin: z.string().url(),
+  origin: z.string().optional(),
   path: z.string().optional(),
-  pattern: z.string().optional()
+  pattern: z.string().optional(),
+  targetUrl: z.string().optional(),
+  autoNavigate: z.boolean().optional()
 });
 export type UrlMatcher = z.infer<typeof UrlMatcherSchema>;
 
