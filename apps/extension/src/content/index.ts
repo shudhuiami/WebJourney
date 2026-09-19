@@ -248,6 +248,15 @@ class WebJourneyOverlay {
         transform: translateY(-1px);
         box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
       }
+      .wj-button-primary {
+        background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%);
+        color: #ffffff;
+        box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
+      }
+      .wj-button-primary:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
+      }
       .wj-button-secondary {
         background: #f8fafc;
         color: #475569;
@@ -257,6 +266,39 @@ class WebJourneyOverlay {
       .wj-button-secondary:hover {
         background: #f1f5f9;
         color: #0f172a;
+        box-shadow: none;
+        transform: none;
+      }
+      .wj-button-danger {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: #ffffff;
+        box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+      }
+      .wj-button-danger:hover {
+        background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+        transform: translateY(-1px);
+      }
+      .wj-button-success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: #ffffff;
+        box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+      }
+      .wj-button-success:hover {
+        background: linear-gradient(135deg, #059669 0%, #047857 100%);
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+        transform: translateY(-1px);
+      }
+      .wj-button-exit {
+        background: #fff1f2;
+        color: #e11d48;
+        border: 1px solid #fecdd3;
+        box-shadow: none;
+      }
+      .wj-button-exit:hover {
+        background: #ffe4e6;
+        color: #be123c;
+        border-color: #fda4af;
         box-shadow: none;
         transform: none;
       }
@@ -633,26 +675,58 @@ class WebJourneyOverlay {
           </div>
           <h4 class="wj-title">${escapeHtml(step.title)}</h4>
           <div class="wj-instruction">${escapeHtml(step.instruction)}</div>
-          <div class="wj-footer">
-            <button class="wj-button wj-button-secondary" id="wj-back-btn" ${currentIdx === 0 ? "disabled style='opacity:0.3; cursor:not-allowed;'" : ""}>&larr; Back</button>
-            <div style="display: flex; gap: 6px;">
-              ${
-                step.allowSkip
-                  ? '<button class="wj-button wj-button-secondary" id="wj-skip-btn">Skip</button>'
-                  : ""
-              }
-              <button class="wj-button" id="wj-step-continue-btn">
-                ${step.action === "manual" ? "Continue &rarr;" : "Next &rarr;"}
-              </button>
-            </div>
-          </div>
+          ${(() => {
+            const customBtns = step.customButtons || [];
+            const hasCustomExit = customBtns.some((b) => b.action === "exit");
+            const hasCustomNext = customBtns.some((b) => b.action === "next");
+            const hasCustomBack = customBtns.some((b) => b.action === "back");
+            const hasCustomSkip = customBtns.some((b) => b.action === "skip");
+
+            const showDefaultBack = !hasCustomBack && currentIdx > 0;
+            const showDefaultExit = !hasCustomExit && step.showExitButton !== false;
+            const showDefaultSkip = !hasCustomSkip && step.allowSkip;
+            const showDefaultNext = !hasCustomNext;
+
+            const customButtonsHtml = customBtns
+              .map((btn, bIdx) => {
+                const variantClass =
+                  btn.variant === "primary"
+                    ? "wj-button-primary"
+                    : btn.variant === "danger"
+                    ? "wj-button-danger"
+                    : btn.variant === "success"
+                    ? "wj-button-success"
+                    : "wj-button-secondary";
+                const icon = btn.action === "url" ? "↗ " : btn.action === "exit" ? "✕ " : "";
+                return `<button class="wj-button ${variantClass} wj-custom-btn" data-btn-idx="${bIdx}" data-action="${escapeHtml(
+                  btn.action
+                )}" data-url="${escapeHtml(btn.url || "")}">
+                  ${icon}${escapeHtml(btn.label)}
+                </button>`;
+              })
+              .join("");
+
+            return `
+              <div class="wj-footer">
+                <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                  ${showDefaultBack ? `<button class="wj-button wj-button-secondary" id="wj-back-btn">&larr; Back</button>` : ""}
+                  ${showDefaultExit ? `<button class="wj-button wj-button-exit" id="wj-card-exit-btn">${escapeHtml(step.exitButtonLabel || "Exit")}</button>` : ""}
+                </div>
+                <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end;">
+                  ${customButtonsHtml}
+                  ${showDefaultSkip ? `<button class="wj-button wj-button-secondary" id="wj-skip-btn">Skip</button>` : ""}
+                  ${showDefaultNext ? `<button class="wj-button wj-button-primary" id="wj-step-continue-btn">${step.action === "manual" ? "Continue &rarr;" : "Next &rarr;"}</button>` : ""}
+                </div>
+              </div>
+            `;
+          })()}
         </div>
       `;
       this.tooltipEl.style.display = "block";
 
       // Viewport Clamping: Card is ALWAYS 100% inside the viewport (portview)
-      const cardWidth = 340;
-      const cardHeight = this.tooltipEl.offsetHeight || 230;
+      const cardWidth = Math.min(360, this.tooltipEl.offsetWidth || 360);
+      const cardHeight = this.tooltipEl.offsetHeight || 240;
       const margin = 14;
 
       let top = rect.bottom + margin;
@@ -693,9 +767,34 @@ class WebJourneyOverlay {
       this.tooltipEl.querySelector("#wj-step-continue-btn")?.addEventListener("click", () => {
         this.player.nextStep();
       });
+      this.tooltipEl.querySelector("#wj-card-exit-btn")?.addEventListener("click", () => {
+        this.player.stop();
+        this.clearHighlight();
+      });
       this.tooltipEl.querySelector("#wj-exit-tour-btn")?.addEventListener("click", () => {
         this.player.stop();
         this.clearHighlight();
+      });
+
+      // Custom button click handlers
+      this.tooltipEl.querySelectorAll<HTMLButtonElement>(".wj-custom-btn").forEach((btnEl) => {
+        btnEl.addEventListener("click", () => {
+          const action = btnEl.getAttribute("data-action");
+          const url = btnEl.getAttribute("data-url");
+
+          if (action === "next") {
+            this.player.nextStep();
+          } else if (action === "back") {
+            this.player.previousStep();
+          } else if (action === "skip") {
+            this.player.skipStep();
+          } else if (action === "exit") {
+            this.player.stop();
+            this.clearHighlight();
+          } else if (action === "url" && url) {
+            window.open(url, "_blank");
+          }
+        });
       });
     }
   }

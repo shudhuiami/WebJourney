@@ -30,7 +30,10 @@ export function createDefaultStep(order = 0): StepDefinition {
     instruction: "Follow this step on the page.",
     action: "click",
     timeoutMs: 30000,
-    allowSkip: false
+    allowSkip: false,
+    showExitButton: true,
+    exitButtonLabel: "Exit",
+    customButtons: []
   };
 }
 

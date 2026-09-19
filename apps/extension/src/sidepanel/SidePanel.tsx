@@ -8,6 +8,9 @@ import {
   type Journey,
   type StepDefinition,
   type StepActionType,
+  type StepButton,
+  type StepButtonAction,
+  type StepButtonVariant,
   type StoredInvite
 } from "@webjourney/journey-schema";
 import { sendTabMessage } from "../messaging";
@@ -47,7 +50,10 @@ const CODEVIOSO_SAMPLE_JOURNEY: Journey = {
         textContentSnippet: "Codevioso"
       },
       timeoutMs: 30000,
-      allowSkip: true
+      allowSkip: true,
+      showExitButton: true,
+      exitButtonLabel: "Exit",
+      customButtons: []
     },
     {
       id: "b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e",
@@ -65,7 +71,10 @@ const CODEVIOSO_SAMPLE_JOURNEY: Journey = {
         textContentSnippet: "Services"
       },
       timeoutMs: 30000,
-      allowSkip: true
+      allowSkip: true,
+      showExitButton: true,
+      exitButtonLabel: "Exit",
+      customButtons: []
     },
     {
       id: "c3d4e5f6-a7b8-9c0d-1e2f-3a4b5c6d7e8f",
@@ -83,7 +92,10 @@ const CODEVIOSO_SAMPLE_JOURNEY: Journey = {
         textContentSnippet: "Products"
       },
       timeoutMs: 30000,
-      allowSkip: true
+      allowSkip: true,
+      showExitButton: true,
+      exitButtonLabel: "Exit",
+      customButtons: []
     },
     {
       id: "d4e5f6a7-b8c9-0d1e-2f3a-4b5c6d7e8f9a",
@@ -101,7 +113,24 @@ const CODEVIOSO_SAMPLE_JOURNEY: Journey = {
         textContentSnippet: "Contact"
       },
       timeoutMs: 30000,
-      allowSkip: true
+      allowSkip: true,
+      showExitButton: true,
+      exitButtonLabel: "Exit Tour",
+      customButtons: [
+        {
+          id: "btn-codevioso-docs",
+          label: "Visit Docs",
+          action: "url",
+          url: "https://codevioso.com/",
+          variant: "secondary"
+        },
+        {
+          id: "btn-codevioso-exit",
+          label: "Finish & Exit",
+          action: "exit",
+          variant: "danger"
+        }
+      ]
     }
   ]
 };
@@ -268,6 +297,36 @@ export function SidePanel() {
       steps: updated,
       updatedAt: new Date().toISOString()
     });
+  };
+
+  const addCustomButton = (stepId: string, preset?: Partial<StepButton>) => {
+    const step = currentJourney.steps.find((s) => s.id === stepId);
+    if (!step) return;
+    const newBtn: StepButton = {
+      id: crypto.randomUUID(),
+      label: preset?.label || "Action",
+      action: preset?.action || "next",
+      variant: preset?.variant || "secondary",
+      url: preset?.url || ""
+    };
+    const updatedButtons = [...(step.customButtons || []), newBtn];
+    updateStep(stepId, { customButtons: updatedButtons });
+  };
+
+  const updateCustomButton = (stepId: string, buttonId: string, patch: Partial<StepButton>) => {
+    const step = currentJourney.steps.find((s) => s.id === stepId);
+    if (!step) return;
+    const updatedButtons = (step.customButtons || []).map((b) =>
+      b.id === buttonId ? { ...b, ...patch } : b
+    );
+    updateStep(stepId, { customButtons: updatedButtons });
+  };
+
+  const removeCustomButton = (stepId: string, buttonId: string) => {
+    const step = currentJourney.steps.find((s) => s.id === stepId);
+    if (!step) return;
+    const updatedButtons = (step.customButtons || []).filter((b) => b.id !== buttonId);
+    updateStep(stepId, { customButtons: updatedButtons });
   };
 
   const removeStep = (id: string) => {
@@ -929,6 +988,207 @@ export function SidePanel() {
                             </div>
                           </div>
 
+                          {/* Navigation & Exit Button Configuration */}
+                          <div style={{ padding: "10px 12px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: step.showExitButton !== false ? "8px" : "0" }}>
+                              <span style={{ fontSize: "11px", fontWeight: 700, color: "#334155" }}>
+                                🛑 Exit Button
+                              </span>
+                              <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", cursor: "pointer", fontWeight: 600, color: "#475569" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={step.showExitButton !== false}
+                                  onChange={(e) => updateStep(step.id, { showExitButton: e.target.checked })}
+                                />
+                                <span>Show Exit Button</span>
+                              </label>
+                            </div>
+                            {step.showExitButton !== false && (
+                              <div>
+                                <label style={{ display: "block", fontSize: "10px", fontWeight: 600, color: "#64748b", marginBottom: "3px" }}>
+                                  Exit Button Title
+                                </label>
+                                <input
+                                  type="text"
+                                  value={step.exitButtonLabel ?? "Exit"}
+                                  placeholder="Exit"
+                                  onChange={(e) => updateStep(step.id, { exitButtonLabel: e.target.value })}
+                                  style={{ width: "100%", padding: "5px 8px", borderRadius: "5px", border: "1px solid #cbd5e1", fontSize: "12px", boxSizing: "border-box" }}
+                                />
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Custom Action Buttons Section */}
+                          <div style={{ padding: "10px 12px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+                              <div>
+                                <span style={{ fontSize: "11px", fontWeight: 700, color: "#334155" }}>
+                                  🔘 Custom Buttons
+                                </span>
+                                <span style={{ fontSize: "10px", color: "#64748b", marginLeft: "6px" }}>
+                                  ({(step.customButtons || []).length})
+                                </span>
+                              </div>
+                              <div style={{ display: "flex", gap: "4px" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => addCustomButton(step.id, { label: "Exit Tour", action: "exit", variant: "danger" })}
+                                  style={{
+                                    padding: "3px 6px",
+                                    background: "#fee2e2",
+                                    color: "#991b1b",
+                                    border: "1px solid #fecaca",
+                                    borderRadius: "4px",
+                                    fontSize: "10px",
+                                    fontWeight: 600,
+                                    cursor: "pointer"
+                                  }}
+                                  title="Add preconfigured Exit button"
+                                >
+                                  + Exit Btn
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => addCustomButton(step.id, { label: "Learn More", action: "url", url: "https://", variant: "secondary" })}
+                                  style={{
+                                    padding: "3px 6px",
+                                    background: "#e0e7ff",
+                                    color: "#3730a3",
+                                    border: "1px solid #c7d2fe",
+                                    borderRadius: "4px",
+                                    fontSize: "10px",
+                                    fontWeight: 600,
+                                    cursor: "pointer"
+                                  }}
+                                  title="Add Link button"
+                                >
+                                  + Link Btn
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* List of Custom Buttons */}
+                            {(!step.customButtons || step.customButtons.length === 0) ? (
+                              <div style={{ fontSize: "11px", color: "#94a3b8", fontStyle: "italic", textAlign: "center", padding: "6px 0" }}>
+                                No custom buttons. Standard Back/Next navigation will be shown.
+                              </div>
+                            ) : (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "8px" }}>
+                                {step.customButtons.map((btn, bIdx) => (
+                                  <div
+                                    key={btn.id || bIdx}
+                                    style={{
+                                      padding: "8px 10px",
+                                      background: "#ffffff",
+                                      border: "1px solid #cbd5e1",
+                                      borderRadius: "6px"
+                                    }}
+                                  >
+                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                                      <span style={{ fontSize: "11px", fontWeight: 700, color: "#1e293b" }}>
+                                        Button #{bIdx + 1}: {btn.label || "Untitled"}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => removeCustomButton(step.id, btn.id)}
+                                        style={{ border: "none", background: "none", color: "#ef4444", fontSize: "12px", cursor: "pointer", padding: "0 2px" }}
+                                        title="Delete button"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+
+                                    {/* Button Title & Action Row */}
+                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", marginBottom: "6px" }}>
+                                      <div>
+                                        <label style={{ display: "block", fontSize: "10px", fontWeight: 600, color: "#64748b", marginBottom: "2px" }}>
+                                          Button Title
+                                        </label>
+                                        <input
+                                          type="text"
+                                          value={btn.label}
+                                          placeholder="Button title"
+                                          onChange={(e) => updateCustomButton(step.id, btn.id, { label: e.target.value })}
+                                          style={{ width: "100%", padding: "5px 7px", fontSize: "11px", borderRadius: "4px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
+                                        />
+                                      </div>
+
+                                      <div>
+                                        <label style={{ display: "block", fontSize: "10px", fontWeight: 600, color: "#64748b", marginBottom: "2px" }}>
+                                          Action
+                                        </label>
+                                        <select
+                                          value={btn.action}
+                                          onChange={(e) => updateCustomButton(step.id, btn.id, { action: e.target.value as StepButtonAction })}
+                                          style={{ width: "100%", padding: "5px 6px", fontSize: "11px", borderRadius: "4px", border: "1px solid #cbd5e1" }}
+                                        >
+                                          <option value="next">Next Step &rarr;</option>
+                                          <option value="back">&larr; Previous Step</option>
+                                          <option value="skip">Skip Step</option>
+                                          <option value="exit">Exit Tour ✕</option>
+                                          <option value="url">Open Link ↗</option>
+                                        </select>
+                                      </div>
+                                    </div>
+
+                                    {/* Button Variant / Style Row */}
+                                    <div style={{ display: "grid", gridTemplateColumns: btn.action === "url" ? "1fr 1fr" : "1fr", gap: "6px" }}>
+                                      <div>
+                                        <label style={{ display: "block", fontSize: "10px", fontWeight: 600, color: "#64748b", marginBottom: "2px" }}>
+                                          Color Theme
+                                        </label>
+                                        <select
+                                          value={btn.variant || "secondary"}
+                                          onChange={(e) => updateCustomButton(step.id, btn.id, { variant: e.target.value as StepButtonVariant })}
+                                          style={{ width: "100%", padding: "5px 6px", fontSize: "11px", borderRadius: "4px", border: "1px solid #cbd5e1" }}
+                                        >
+                                          <option value="primary">Primary (Blue)</option>
+                                          <option value="secondary">Secondary (Neutral)</option>
+                                          <option value="danger">Danger (Red)</option>
+                                          <option value="success">Success (Green)</option>
+                                        </select>
+                                      </div>
+
+                                      {btn.action === "url" && (
+                                        <div>
+                                          <label style={{ display: "block", fontSize: "10px", fontWeight: 600, color: "#64748b", marginBottom: "2px" }}>
+                                            Target URL
+                                          </label>
+                                          <input
+                                            type="text"
+                                            value={btn.url || ""}
+                                            placeholder="https://example.com"
+                                            onChange={(e) => updateCustomButton(step.id, btn.id, { url: e.target.value })}
+                                            style={{ width: "100%", padding: "5px 7px", fontSize: "11px", borderRadius: "4px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
+                                          />
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => addCustomButton(step.id)}
+                              style={{
+                                width: "100%",
+                                padding: "6px",
+                                background: "#ffffff",
+                                border: "1px dashed #94a3b8",
+                                borderRadius: "6px",
+                                color: "#475569",
+                                fontSize: "11px",
+                                fontWeight: 600,
+                                cursor: "pointer"
+                              }}
+                            >
+                              + Add Custom Button
+                            </button>
+                          </div>
+
                           {step.target && (
                             <div style={{ padding: "8px", background: "#f8fafc", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
                               <span style={{ fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>
@@ -976,10 +1236,22 @@ export function SidePanel() {
                       ) : (
                         <div style={{ padding: "8px 14px 10px", fontSize: "12px", color: "#475569" }}>
                           <p style={{ margin: "0 0 6px", lineHeight: 1.4 }}>{step.instruction}</p>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <code style={{ fontSize: "10px", color: "#64748b" }}>
-                              {step.target?.selectorCandidates[0]?.slice(0, 35)}...
-                            </code>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                              <code style={{ fontSize: "10px", color: "#64748b" }}>
+                                {step.target?.selectorCandidates[0]?.slice(0, 24)}...
+                              </code>
+                              {step.customButtons && step.customButtons.length > 0 && (
+                                <span style={{ fontSize: "9px", background: "#f1f5f9", color: "#475569", border: "1px solid #cbd5e1", padding: "1px 5px", borderRadius: "4px", fontWeight: 600 }}>
+                                  {step.customButtons.length} btn{step.customButtons.length > 1 ? "s" : ""}
+                                </span>
+                              )}
+                              {step.showExitButton !== false && (
+                                <span style={{ fontSize: "9px", background: "#fff1f2", color: "#e11d48", border: "1px solid #fecdd3", padding: "1px 5px", borderRadius: "4px", fontWeight: 600 }}>
+                                  {step.exitButtonLabel || "Exit"}
+                                </span>
+                              )}
+                            </div>
                             <button
                               onClick={() => testHighlight(step)}
                               style={{ background: "none", border: "none", color: "#2563eb", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}

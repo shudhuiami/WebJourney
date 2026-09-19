@@ -26,6 +26,32 @@ export const UrlMatcherSchema = z.object({
 });
 export type UrlMatcher = z.infer<typeof UrlMatcherSchema>;
 
+export const StepButtonActionSchema = z.enum([
+  "next",
+  "back",
+  "skip",
+  "exit",
+  "url"
+]);
+export type StepButtonAction = z.infer<typeof StepButtonActionSchema>;
+
+export const StepButtonVariantSchema = z.enum([
+  "primary",
+  "secondary",
+  "danger",
+  "success"
+]);
+export type StepButtonVariant = z.infer<typeof StepButtonVariantSchema>;
+
+export const StepButtonSchema = z.object({
+  id: z.string(),
+  label: z.string().min(1).max(50),
+  action: StepButtonActionSchema,
+  url: z.string().optional(),
+  variant: StepButtonVariantSchema.default("secondary")
+});
+export type StepButton = z.infer<typeof StepButtonSchema>;
+
 export const StepDefinitionSchema = z.object({
   id: z.string().uuid(),
   order: z.number().int().nonnegative(),
@@ -36,7 +62,10 @@ export const StepDefinitionSchema = z.object({
   urlMatcher: UrlMatcherSchema.optional(),
   timeoutMs: z.number().int().positive().default(30000),
   allowSkip: z.boolean().default(false),
-  fallbackInstruction: z.string().max(500).optional()
+  fallbackInstruction: z.string().max(500).optional(),
+  showExitButton: z.boolean().optional(),
+  exitButtonLabel: z.string().max(40).optional(),
+  customButtons: z.array(StepButtonSchema).optional()
 });
 export type StepDefinition = z.infer<typeof StepDefinitionSchema>;
 

@@ -68,5 +68,44 @@ describe("JourneySchema", () => {
     const result = validateJourney(journey);
     expect(result.valid).toBe(true);
     expect(result.errors).toHaveLength(0);
+    expect(journey.steps[0].showExitButton).toBe(true);
+    expect(journey.steps[0].exitButtonLabel).toBe("Exit");
+    expect(journey.steps[0].customButtons).toEqual([]);
+  });
+
+  it("validates steps with custom action buttons and exit button config", () => {
+    const journey = createEmptyJourney("Custom Button Flow", "https://demo.example.com");
+    const step = createDefaultStep(0);
+    step.showExitButton = true;
+    step.exitButtonLabel = "Leave Tutorial";
+    step.customButtons = [
+      {
+        id: "btn-next",
+        label: "Next Section",
+        action: "next",
+        variant: "primary"
+      },
+      {
+        id: "btn-docs",
+        label: "Visit Docs",
+        action: "url",
+        url: "https://codevioso.com/docs",
+        variant: "secondary"
+      },
+      {
+        id: "btn-exit",
+        label: "Exit Now",
+        action: "exit",
+        variant: "danger"
+      }
+    ];
+    journey.steps.push(step);
+
+    const result = validateJourney(journey);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+    expect(result.journey?.steps[0].customButtons).toHaveLength(3);
+    expect(result.journey?.steps[0].customButtons?.[1].action).toBe("url");
   });
 });
+
