@@ -1,0 +1,22 @@
+{
+  "name": "webjourney-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WebJourney — Interactive guidance on real websites",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev:demo": "npm run dev --workspace=@webjourney/demo-site",
+    "dev:ext": "npm run dev --workspace=@webjourney/extension",
+    "build:ext": "npm run build --workspace=@webjourney/extension"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  }
+}
