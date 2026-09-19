@@ -70,10 +70,10 @@ flowchart LR
 ## Phase 4 — Publishing, Sharing & Governance
 *Goal: Allow authors to publish immutable versions and share secure invitation links with learners.*
 
-- [ ] **WJ-401**: Publish immutable journey versions (frozen snapshot separated from draft).
-- [ ] **WJ-402**: Create invitation token generator (hashed tokens, expiry, revocation).
-- [ ] **WJ-403**: Learner invitation flow: preview summary, origin permission grant, and playback initiation.
-- [ ] **WJ-404**: Minimal completion events & sanitized diagnostic issue reporting.
+- [x] **WJ-401**: Publish immutable journey versions (frozen snapshot separated from draft).
+- [x] **WJ-402**: Create invitation token generator (hashed tokens, expiry, revocation).
+- [x] **WJ-403**: Implement invitation open/preview + origin permission grant + playback handoff.
+- [x] **WJ-404**: Add minimal completion events & sanitized diagnostic issue reporting.
 
 ---
 

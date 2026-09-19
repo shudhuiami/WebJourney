@@ -3,9 +3,12 @@ import {
   createEmptyJourney,
   createDefaultStep,
   validateJourney,
+  createPublishedVersion,
+  createInvitationRecord,
   type Journey,
   type StepDefinition,
-  type StepActionType
+  type StepActionType,
+  type StoredInvite
 } from "@webjourney/journey-schema";
 import { sendTabMessage } from "../messaging";
 
@@ -25,7 +28,42 @@ export function SidePanel() {
     candidatesCount: number;
   } | null>(null);
   const [statusMessage, setStatusMessage] = useState<string>("");
+  const [publishedInvite, setPublishedInvite] = useState<StoredInvite | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const publishCurrentJourney = () => {
+    if (currentJourney.steps.length === 0) {
+      setStatusMessage("Cannot publish an empty journey. Add steps first.");
+      return;
+    }
+
+    const version = createPublishedVersion(currentJourney, 1);
+    const invite = createInvitationRecord(version, 30);
+
+    if (chrome.storage?.local) {
+      chrome.storage.local.get(["webjourney_invitations", "webjourney_published_versions"], (res) => {
+        const currentInvites = res.webjourney_invitations || {};
+        const currentVersions = res.webjourney_published_versions || [];
+
+        currentInvites[invite.code] = invite;
+        currentVersions.push(version);
+
+        chrome.storage.local.set(
+          {
+            webjourney_invitations: currentInvites,
+            webjourney_published_versions: currentVersions
+          },
+          () => {
+            setPublishedInvite(invite);
+            setStatusMessage(`Published Version ${version.versionNumber}! Share code: ${invite.code}`);
+          }
+        );
+      });
+    } else {
+      setPublishedInvite(invite);
+      setStatusMessage(`Published Version ${version.versionNumber}! Share code: ${invite.code}`);
+    }
+  };
 
   // Load draft from chrome.storage.local on mount
   useEffect(() => {
@@ -254,6 +292,12 @@ export function SidePanel() {
               ▶ Play
             </button>
             <button
+              onClick={publishCurrentJourney}
+              style={{ padding: "4px 8px", fontSize: "11px", background: "#10b981", color: "#fff", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: 600 }}
+            >
+              🚀 Publish
+            </button>
+            <button
               onClick={exportJourneyJSON}
               title="Export JSON"
               style={{ padding: "4px 8px", fontSize: "11px", background: "#f1f5f9", border: "1px solid #cbd5e1", borderRadius: "4px", cursor: "pointer" }}
@@ -280,6 +324,37 @@ export function SidePanel() {
 
       {/* Main Body */}
       <main style={{ padding: "14px", flex: 1, overflowY: "auto" }}>
+        {publishedInvite && (
+          <div style={{ background: "#ecfdf5", border: "1px solid #a7f3d0", padding: "12px", borderRadius: "8px", marginBottom: "12px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+              <span style={{ fontSize: "11px", fontWeight: 700, color: "#065f46", textTransform: "uppercase" }}>
+                ✓ Published Version {publishedInvite.versionNumber}
+              </span>
+              <button
+                onClick={() => setPublishedInvite(null)}
+                style={{ background: "none", border: "none", color: "#065f46", cursor: "pointer" }}
+              >
+                &times;
+              </button>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "6px" }}>
+              <span style={{ fontSize: "12px", color: "#047857" }}>Share Code:</span>
+              <code style={{ fontSize: "13px", fontWeight: 700, background: "#ffffff", padding: "2px 8px", borderRadius: "4px", border: "1px solid #a7f3d0", color: "#065f46" }}>
+                {publishedInvite.code}
+              </code>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(publishedInvite.code);
+                  setStatusMessage("Share code copied to clipboard!");
+                }}
+                style={{ padding: "3px 8px", fontSize: "11px", background: "#10b981", color: "#ffffff", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: 600 }}
+              >
+                Copy
+              </button>
+            </div>
+          </div>
+        )}
+
         {statusMessage && (
           <div
             style={{
